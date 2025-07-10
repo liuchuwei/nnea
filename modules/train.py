@@ -5,7 +5,7 @@ from argparse import ArgumentDefaultsHelpFormatter
 import torch
 
 from model.trainer import Trainer
-from utils.train_utils import SetSeed, LoadModel
+from utils.train_utils import SetSeed, LoadModel, SetDevice
 from utils.io_utils import Loader, LoadConfig
 
 
@@ -30,18 +30,17 @@ def main(args):
     "2.set seed"
     SetSeed(config['seed'])
 
-    "3.load dataset"
-    loader = Loader(config)
-    loader.load()
-    config['num_classes'] = loader.num_class
-    config['num_genes'] = loader.num_genes
-    config['gene_names'] = loader.genes_name
+    "3.set device"
+    config = SetDevice(config)
 
-    "4.build model"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = LoadModel(config)
+    "4.load dataset"
+    loader = Loader(config)
+    loader.load_dataset()
+
+    "5.build model"
+    model = LoadModel(config, loader)
     model.build_model()
-    model.to(device)
+    model.to(config['device'])
 
     "5.train model"
     trainer = Trainer(config, model, loader)

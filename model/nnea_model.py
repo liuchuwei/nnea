@@ -1,21 +1,24 @@
 import torch
 import torch.nn as nn
-from model.nnea_layers import TrainableGeneSetLayer, FeatureAttention, AttentionClassifier
 import torch.nn.functional as F
+from utils.train_utils import BuildGenesetLayer, BuildDeepGenesetLayer, BuildClassifier
 
 
 class nnea(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, config, loader):
         super().__init__()
 
         self.config = config
-        self.mode = config.get('mode', 'deep_mode')
-        self.num_layers = config.get('num_layers', 3) if self.mode == 'deep_mode' else 1
+        self.gene = loader.gene
+        self.sample_ids = loader.sample_ids
+        self.config['num_genes'] = len(self.gene)
+
         # 先验知识处理
         self.prior_mask = self.load_gmt(
                     config['piror_knowledge'],
-                    config['gene_names']) if config.get('piror_knowledge') else None
+                    config['gene_names']) if config.get('use_piror_knowldege') else None
+
 
     def load_gmt(self, gmt_path, gene_names):
         """ 解析.gmt文件为基因集指示矩阵 """
@@ -39,98 +42,46 @@ class nnea(nn.Module):
 
     def build_geneset_layer(self):
 
-
-        if self.mode == 'deep_mode':
-
-            self.gene_set_layers = nn.ModuleList()
-            for i in range(self.num_layers):
-                if i == 0 and self.prior_knowledge is not None:
-                    prior_tensor = self.prior_knowledge.to(self.config.get('device', 'cpu'))
-                    layer = TrainableGeneSetLayer(
-                        num_genes=self.config['num_genes'],
-                        num_sets=prior_tensor.shape[0],
-                        min_set_size=self.config['set_min_size'],
-                        max_set_size=self.config['set_max_size'],
-                        alpha=self.config['alpha'],
-                        is_deep_layer=True,
-                        layer_index=i,
-                        prior_knowledge=prior_tensor,
-                        freeze_prior=self.config['freeze_prior']
-                    )
-                    layer.set_membership.requires_grad = False  # 冻结参数
-                else:
-                    layer = TrainableGeneSetLayer(
-                        num_genes=self.config['num_genes'],
-                        num_sets=self.config['num_sub_sets'] if self.mode == 'deep_mode' else self.config['num_sets'],
-                        min_set_size=self.config['set_min_size'],
-                        max_set_size=self.config['set_max_size'],
-                        alpha=self.config['alpha'],
-                        is_deep_layer=(self.mode == 'deep_mode'),
-                        layer_index=i
-                    )
-                self.gene_set_layers.append(layer)
-
-        else:  # one_mode
-            if self.prior_knowledge is not None:
-                prior_tensor = self.prior_knowledge.to(self.config.get('device', 'cpu'))
-                self.gene_set_layer = TrainableGeneSetLayer(
-                    num_genes=self.config['num_genes'],
-                    num_sets=prior_tensor.shape[0],
-                    min_set_size=self.config['set_min_size'],
-                    max_set_size=self.config['set_max_size'],
-                    alpha=self.config['alpha'],
-                    is_deep_layer=False,
-                    prior_knowledge=prior_tensor,
-                    freeze_prior=self.config['freeze_prior']
-                )
-            else:
-                self.gene_set_layer = TrainableGeneSetLayer(
-                    num_genes=self.config['num_genes'],
-                    num_sets=self.config['num_sets'],
-                    min_set_size=self.config['set_min_size'],
-                    max_set_size=self.config['set_max_size'],
-                    alpha=self.config['alpha'],
-                    is_deep_layer=False
-                )
-
+        if self.config['geneset_layer_mode'] == 'one_mode':
+            self.gene_set_layer = BuildGenesetLayer(config=self.config, prior_tensor=self.prior_mask)
+        elif self.config['geneset_layer_mode'] == 'deep_mode':
+            self.gene_set_layers = BuildDeepGenesetLayer(config=self.config, prior_tensor=self.prior_mask)
     def build_classifier_layer(self):
 
-        if self.mode == 'deep_mode':
+        if self.config['geneset_layer_mode'] == 'deep_mode':
             # 在深度模式下使用所有层的特征拼接
-            total_sets = self.num_layers * self.config['num_sub_sets']
+            input_dim = self.config['geneset_layers'] * self.config['sub_num_genesets']
+        elif self.config['geneset_layer_mode'] == 'one_mode':
+            input_dim = self.config['num_sets']
+
+        self.classifier = BuildClassifier(self.config, input_dim=input_dim)
+
+    def build_decoder(self):
+        """构建自编码器的解码器层"""
+        # 使用基因集层相同的输入维度
+        if self.config['geneset_layer_mode'] == 'deep_mode':
+            decoder_input_dim = self.config['geneset_layers'] * self.config['sub_num_genesets']
         else:
-            total_sets = self.config['num_sets']
+            decoder_input_dim = self.config['num_sets']
 
-        if self.config['classifier'] == "linear":
-            self.classifier = nn.Sequential(
-                nn.Linear(total_sets, self.config['hidden_dim']),
-                nn.ReLU(),
-                nn.BatchNorm1d(self.config['hidden_dim']),
-                nn.Dropout(0.4),
-                nn.Linear(self.config['hidden_dim'], self.config['hidden_dim'] // 2),
-                nn.ReLU(),
-                nn.BatchNorm1d(self.config['hidden_dim'] // 2),
-                nn.Dropout(0.3),
-                nn.Linear(self.config['hidden_dim'] // 2, self.config['num_classes'])
-            )
-
-        elif self.config['classifier'] == "attention":
-
-            self.classifier =AttentionClassifier(
-            num_sets=self.config['num_sets'],
-            num_classes=self.config['num_classes'],
-            hidden_dim=self.config.get('attn_hidden_dim', 64)  # 可配置的隐藏层维度
+        # 解码器：从基因集分数重构基因表达
+        self.decoder = nn.Sequential(
+            nn.Linear(decoder_input_dim, self.config['num_genes'])
         )
 
     def build_model(self):
 
         self.build_geneset_layer()
-        self.build_classifier_layer()
+
+        if self.config['task'] == "autoencoder":
+            self.build_decoder()
+        else:
+            self.build_classifier_layer()
 
     def regularization_loss(self):
 
         """返回基因集层的正则化损失"""
-        if self.mode == 'deep_mode':
+        if self.config['geneset_layer_mode'] == 'deep_mode':
             total_loss = 0
             for layer in self.gene_set_layers:
                 total_loss += layer.regularization_loss()
@@ -140,7 +91,7 @@ class nnea(nn.Module):
 
     def forward(self, R, S):
 
-        if self.mode == 'deep_mode':
+        if self.config['geneset_layer_mode'] == 'deep_mode':
             # 深度模式：分层计算
             all_es_scores = []
             gene_mask = torch.ones(R.shape[1], device=R.device)
@@ -164,11 +115,17 @@ class nnea(nn.Module):
         else:
             # 单层模式
             es_scores = self.gene_set_layer(R, S)
+
         # 预测类别
-        if self.config['classifier'] == "linear":
+        if self.config['task'] in ["regression", "classification", "cox", "umap"]:
             logits = self.classifier(es_scores)
-        elif self.config['classifier'] == "attention":
-            logits, attention_weights = self.classifier(es_scores)
 
+            if self.config['task'] in ['classification']:
+                res = F.log_softmax(logits, dim=1)
+            elif self.config['task'] in ['regression', "cox", "umap"]:
+                res = logits
 
-        return F.log_softmax(logits, dim=1)
+            return res
+
+        elif self.config['task'] == "autoencoder":
+            return self.decoder(es_scores)

@@ -1,0 +1,38 @@
+[gobal]
+    seed = 888888888
+    device = "cuda"
+    dataset = 'lym_gender'
+    task = "cell_class"
+
+[piror_knowldege]
+    piror_path = "data/genesets/c1.all.v2025.1.Hs.symbols.gmt"
+    freeze_prior = false
+
+[geneset_layer]
+    geneset_layer_mode = "one_mode" # one_mode; deep_mod
+    use_piror_knowldege = false
+    geneset_layer_alpha = 0.25
+    num_sets = 20
+    set_min_size = 10
+    set_max_size = 50
+
+[deep_mod]
+    geneset_layers = 2
+    sub_num_genesets = 10
+
+[classifier]
+    classifier_name = 'linear' # linear or attention
+    hidden_dim = 128
+    num_classes = 2
+
+
+[optimizer]
+    learning_rate = 0.001
+    opt_name = "adam"
+
+[trainer]
+    batch_size = 32
+    num_epochs = 10000
+
+
+

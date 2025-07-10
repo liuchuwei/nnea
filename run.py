@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from modules import train, explain
+from modules import dataload, train, explain
 
-modules = ['train', 'explain']
+modules = ['dataload', 'train', 'explain']
 
 __version__ = "1.0.0"
 

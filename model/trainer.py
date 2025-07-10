@@ -1,9 +1,15 @@
 import os
 
+import numpy as np
 import torch
+from sklearn.metrics import classification_report
 from torch import nn
+import torch.nn.functional as F
 
 import shutil
+from utils.train_utils import cox_loss, BuildOptimizer
+from sklearn.metrics import silhouette_score
+
 
 class Trainer(object):
 
@@ -12,55 +18,182 @@ class Trainer(object):
         self.config = config
         self.model = model
         self.loader = loader.torch_loader
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=config['learning_rate'])
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # 裁剪梯度
-        self.classification_loss = nn.NLLLoss()
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, factor=0.5, patience=5)
+        self.scheduler, self.optimizer = BuildOptimizer(params=model.parameters(), config=config)
+
+
+        if config['task'] == "umap":
+            self.umap_loss = UMAP_Loss(
+                n_neighbors=config['n_neighbors'],
+                min_dist=config['min_dist']
+            )
 
     def evaluate(self):
 
         self.model.eval()
+        total_samples = 0
+        pos_samples = 0
+        neg_samples = 0
+        pos_risk = 0
+        neg_risk = 0
+        correct = 0
+        mse_loss = 0.0
+        mae_loss = 0.0
+        recon_loss = 0.0
+        silhouette_loss = 0.0
+        all_predictions = []  # 存储所有预测值
+        all_targets = []  # 存储所有真实标签
 
         with torch.no_grad():
-            correct = 0
-            total_samples = 0
+            for batch_data in self.loader:
 
-            for batch_R, batch_S, batch_y in self.loader:
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                batch_R, batch_S, batch_y = batch_R.to(device), batch_S.to(
-                    device), batch_y.to(device)
-                log_probs = self.model(batch_R, batch_S)
+                device = self.config['device']
+                batch_R, batch_S = batch_data[0].to(device),  batch_data[1].to(
+                    device)
 
-                _, predicted = torch.max(log_probs, 1)
-                correct += (predicted == batch_y).sum().item()
-                total_samples += batch_y.size(0)
+                # 前向传播
+                logits = self.model(batch_R, batch_S)
 
-            accuracy = correct / total_samples
+                total_samples += batch_data[0].size(0)
 
-        return accuracy
+                if self.config['task'] in ['classification']:
+
+                    _, predicted = torch.max(logits, 1)
+                    batch_y = batch_data[2]
+                    correct += (predicted == batch_y.to(self.config["device"])).sum().item()
+
+                    # 累积预测值和标签
+                    all_predictions.append(predicted.cpu())
+                    all_targets.append(batch_y.cpu())
+
+                elif self.config['task'] in ['cox']:
+                    events = batch_data[3]
+                    pos_samples += sum(events == 1)
+                    neg_samples += sum(events == 0)
+                    pos_risk += torch.sum(logits[events == 1])
+                    neg_risk += torch.sum(logits[events == 0])
+
+                elif self.config['task'] in ['regression']:
+                    predictions = logits.squeeze()
+                    batch_y = batch_data[2].to(device, dtype=torch.float)
+
+                    # 计算 MSE 和 MAE
+                    mse_loss += nn.MSELoss()(predictions, batch_y).item() * len(batch_y)
+                    mae_loss += nn.L1Loss()(predictions, batch_y).item() * len(batch_y)
+
+                    # 累积预测值和标签
+                    all_predictions.append(predictions.cpu())
+                    all_targets.append(batch_y.cpu())
+
+                elif self.config['task'] in ['autoencoder']:
+                    enc_exp = logits
+                    norm_exp = batch_data[2].to(device, dtype=torch.float)
+                    batch_recon_loss = F.mse_loss(enc_exp, norm_exp).item()
+                    recon_loss += batch_recon_loss * batch_R.size(0)
+
+                elif self.config['task'] in ['umap']:
+                    embeddings = logits.cpu().detach()
+                    labels = batch_data[3].cpu().detach()# 假设batch_data[1]是细胞类型
+                    all_predictions.append(embeddings)
+                    all_targets.append(labels)
+
+
+            if self.config['task'] in ['classification']:
+                self.accuracy = correct / total_samples
+
+                # 计算混淆矩阵和F1分数
+                all_preds = torch.cat(all_predictions).numpy()
+                all_targets = torch.cat(all_targets).numpy()
+
+                # 计算每个类别的精确率、召回率和F1分数
+                self.classification_report = classification_report(
+                    all_targets, all_preds,
+                    target_names=self.config['class_names'],
+                    output_dict=True,
+                    zero_division=0  # 或 1，根据需求设置
+                )
+                self.macro_f1 = self.classification_report['macro avg']['f1-score']
+                self.weighted_f1 = self.classification_report['weighted avg']['f1-score']
+
+
+            if self.config['task'] in ['autoencoder']:
+                self.recon_loss = recon_loss / total_samples
+
+            elif self.config['task'] in ['umap']:
+
+                all_preds = torch.cat(all_predictions).numpy()
+                all_targets = torch.cat(all_targets).numpy()
+
+                self.silhouette_loss = silhouette_score(all_preds, all_targets)
+
+            elif self.config['task'] in ['cox']:
+                self.high_risk = pos_risk / total_samples
+                self.low_risk = neg_risk / total_samples
+                self.accuracy = self.high_risk - self.low_risk
+
+            elif self.config['task'] == 'regression':
+                self.mse = mse_loss / total_samples
+                self.mae = mae_loss / total_samples
+
+                all_preds = torch.cat(all_predictions).numpy()
+                all_targets = torch.cat(all_targets).numpy()
+
+                pearson_corr = np.corrcoef(all_preds, all_targets)[0, 1]
+                self.pearson = pearson_corr if not np.isnan(pearson_corr) else 0.0
+
+    def get_task_loss(self, logits, batch_data, device):
+
+        if self.config['task'] in ['classification']:
+            log_probs = logits
+            batch_y = batch_data[2].to(device, dtype=torch.long)
+            return nn.NLLLoss()(log_probs, batch_y)
+
+        elif self.config['task'] in ['cox']:
+            risks = logits
+            times = batch_data[2].to(device)
+            events = batch_data[3].to(device)
+            return cox_loss(risks, times, events)
+
+        elif self.config['task'] == 'regression':
+            predictions = logits.squeeze()  # 确保输出是1D向量
+            batch_y = batch_data[2].to(device, dtype=torch.float)
+            return nn.MSELoss()(predictions, batch_y)
+
+        elif self.config['task'] == 'autoencoder':
+            enc_exp = logits  # 确保输出是1D向量
+            norm_exp = batch_data[2].to(device, dtype=torch.float)
+
+            return F.mse_loss(enc_exp, norm_exp)
+
+        elif self.config['task'] == 'umap':
+            embeddings = logits
+            inputs = batch_data[2].to(device, dtype=torch.float)
+            return self.umap_loss(embeddings, inputs)
 
     def one_epoch(self):
         self.model.train()
         total_loss = 0.0
 
-        for batch_R, batch_S, batch_y in self.loader:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            batch_R, batch_S, batch_y = batch_R.to(device),  batch_S.to(
-                device), batch_y.to(device)
+        # for batch_R, batch_S, batch_y in self.loader:
+        for batch_data in self.loader:
+
+            device = self.config['device']
+            batch_R, batch_S = batch_data[0].to(device),  batch_data[1].to(
+                device)
 
             self.optimizer.zero_grad()
 
             # 前向传播
-            log_probs = self.model(batch_R, batch_S)
+            logits = self.model(batch_R, batch_S)
 
             # 计算分类损失
-            class_loss = self.classification_loss(log_probs, batch_y)
+            task_loss = self.get_task_loss(logits, batch_data, device=self.config['device'])
 
             # 计算正则化损失
             reg_loss = self.model.regularization_loss()
 
             # 总损失（分类损失+正则化损失）
-            total_batch_loss = class_loss + reg_loss
+            total_batch_loss = task_loss + reg_loss
 
             # 反向传播
             total_batch_loss.backward()
@@ -71,34 +204,161 @@ class Trainer(object):
 
         avg_loss = total_loss / len(self.loader)
 
-        return avg_loss, class_loss, reg_loss
+        return avg_loss, task_loss, reg_loss
 
     def save_checkpoint(self, epoch):
 
         checkpoint_dir = self.config['checkpoint_dir']
         if not os.path.exists(checkpoint_dir):  # 先检查是否存在
                 os.makedirs(checkpoint_dir)
-                source_file = self.config['path']
+                source_file = self.config['toml_path']
                 dest_path = os.path.join(checkpoint_dir, os.path.basename(source_file))
                 shutil.copy2(source_file, dest_path)  # 复制文件并保留元数据[6,8](@ref)
 
         torch.save(self.model.state_dict(), self.config['check_point'])
 
+    def save_model(self, epoch):
+
+        # 任务类型与监控指标的映射
+        if self.config['task'] == "cox":
+            current_metric = self.accuracy
+        elif self.config['task'] == "classification":
+            current_metric = self.macro_f1
+        elif self.config['task'] == "regression":
+            current_metric = -self.mse  # 负值方便统一逻辑（越大越好）
+        elif self.config['task'] == "autoencoder":
+            current_metric = -self.recon_loss
+        elif self.config['task'] == "umap":
+            current_metric = -self.silhouette_loss
+
+        improved = current_metric > self.best_metric
+
+        if improved:
+            self.best_metric = current_metric
+            self.save_checkpoint(epoch)
+
+        return improved
+    def print_process(self, epoch, task_loss, reg_loss, avg_loss):
+
+        if self.config['task'] in ['classification']:
+
+            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                  f"Accuracy: {self.accuracy:.4f} "
+                  f"Macro F1: {self.macro_f1:.4f}, "
+                  f"Weighted F1: {self.weighted_f1:.4f}"
+                  )
+
+        elif self.config['task'] in ['cox']:
+
+            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                  f"Diff risk: {self.accuracy:.4f}, "
+                  f"High risk: {self.high_risk:.4f}, Low risk: {self.low_risk:.4f}, ")
+
+        elif self.config['task'] in ['regression']:
+            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                  f"MSE: {self.mse:.4f}, MAE: {self.mae:.4f}, PCC: {self.pearson:.4f}")
+
+        elif self.config['task'] in ['autoencoder']:
+            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                  f"Recon Loss: {self.recon_loss:.4f}")
+
+        elif self.config['task'] in ['umap']:
+            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                  f"Silhouette Loss: {self.silhouette_loss:.4f}")
+
+
     def train(self):
 
-        best_accuracy = 0
+        # 初始化早停相关变量（同时监控训练损失和验证指标）
+        self.best_metric = -float('inf') if self.config['task'] in ['classification', 'cox'] else float('inf')
+        self.best_avg_loss = float('inf')  # 新增：追踪最佳训练损失
+        self.patience_counter_metric = 0   # 验证指标无改善的计数器
+        self.patience_counter_loss = 0      # 训练损失无改善的计数器
 
         for epoch in range(self.config['num_epochs']):
 
-            avg_loss, class_loss, reg_loss = self.one_epoch()
-            accuracy = self.evaluate()
+            avg_loss, task_loss, reg_loss = self.one_epoch()
+            self.evaluate()
             self.scheduler.step(avg_loss)
 
-            if accuracy >= best_accuracy:
-                best_accuracy = accuracy
-                self.save_checkpoint(epoch)
-                # torch.save(self.model.state_dict(), self.config['check_point'])
+            # 关键修改：同时监控训练损失和验证指标
+            improved_metric = self.save_model(epoch)  # 验证指标是否提升
+            improved_loss = avg_loss < self.best_avg_loss  # 训练损失是否降低
 
-            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
-                  f"Class Loss: {class_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Accuracy: {accuracy:.4f}")
+            # 更新最佳损失
+            if improved_loss:
+                self.best_avg_loss = avg_loss
+                self.patience_counter_loss = 0
+            else:
+                self.patience_counter_loss += 1
+
+            # 更新早停计数器（验证指标）
+            if improved_metric:
+                self.patience_counter_metric += 1
+            else:
+                self.patience_counter_metric = 0
+
+            # 打印训练信息
+            self.print_process(epoch, task_loss, reg_loss, avg_loss)
+
+            # 早停条件：训练损失或验证指标连续恶化
+            if (self.patience_counter_metric >= self.config['patience_metric'] and
+                    self.patience_counter_loss >= self.config['patience_loss']):
+                print(f"Early stopping at epoch {epoch}")
+                break
+
+
+class UMAP_Loss(nn.Module):
+    def __init__(self, n_neighbors=15, min_dist=0.1):
+        super().__init__()
+        self.n_neighbors = n_neighbors
+        self.min_dist = min_dist
+        self.a, self.b = self._find_ab_params(min_dist)
+
+    def _find_ab_params(self, min_dist):
+        a = 1.0 / (min_dist ** 2)  # 柯西分布参数计算[6](@ref)
+        b = torch.log(torch.tensor(2.0))
+        return a, b
+
+    def forward(self, embeddings, data):
+        # 1. 动态调整邻居数（关键修复！）
+        n_samples = data.size(0)
+        effective_k = min(self.n_neighbors + 1, n_samples)  # 确保不超过样本数
+
+        # 2. 高维空间相似度
+        distances = torch.cdist(data, data)
+
+        # 处理小batch情况
+        if effective_k <= 1:  # 无足够邻居可计算
+            return torch.tensor(0.0, device=data.device, requires_grad=True)
+
+        # 获取最近的k个点（包括自身）
+        _, indices = torch.topk(distances, effective_k, largest=False)
+
+        # 3. 构建邻居掩码（排除自身）
+        neighbor_mask = torch.zeros_like(distances, device=data.device)
+        row_idx = torch.arange(n_samples).view(-1, 1).expand(-1, effective_k - 1)
+        neighbor_mask[row_idx, indices[:, 1:]] = 1  # 跳过自身（索引0）
+
+        # 4. 对称化邻接矩阵（UMAP核心）
+        neighbor_mask = neighbor_mask.float()
+        sym_mask = (neighbor_mask + neighbor_mask.t()) > 0  # 取并集[1,4](@ref)
+
+        # 5. 计算高维相似度（使用局部自适应尺度）
+        local_scale = distances.gather(1, indices[:, 1:2]).mean(dim=1)  # 自适应σ[4](@ref)
+        p_ij = sym_mask * torch.exp(-distances ** 2 / (local_scale.unsqueeze(1) * local_scale))
+        p_ij = p_ij / torch.clamp(p_ij.sum(dim=1), min=1e-12).unsqueeze(1)
+
+        # 6. 低维空间相似度
+        low_dim_dist = torch.cdist(embeddings, embeddings)
+        q_ij = 1.0 / (1 + self.a * low_dim_dist ** (2 * self.b))  # UMAP曲线拟合[1,6](@ref)
+
+        # 7. 交叉熵损失（原始UMAP设计）[1,4,6](@ref)
+        loss_pos = p_ij * torch.log(q_ij + 1e-7)
+        loss_neg = (1 - p_ij) * torch.log(1 - q_ij + 1e-7)
+        return -(loss_pos + loss_neg).mean()

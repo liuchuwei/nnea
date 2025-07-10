@@ -11,11 +11,13 @@ class Explainer(object):
         self.config = config
         self.model = model
         self.loader = loader.torch_loader
+        self.gene = loader.gene
 
     def indicate_gene_importance(self):
         indicators = self.model.gene_set_layer.get_set_indicators()
         indicators = indicators.detach().cpu().numpy()
-        np.savetxt(self.config['indicator'], indicators, delimiter=",")
+        indicators = np.vstack([self.gene, indicators])
+        np.savetxt(self.config['indicator'], indicators, delimiter=",", fmt="%s")
 
     def indicate_gene_set_importance(self):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -26,21 +28,56 @@ class Explainer(object):
         total_samples = len(self.loader.dataset)
         progress_bar = tqdm(self.loader.dataset, total=total_samples, desc="Calculating IG scores")
 
-        for R_sample, S_sample, y_sample in progress_bar:
-            R_sample = R_sample.clone().detach().to(device)
-            S_sample = S_sample.clone().detach().to(device)
+        for batch in progress_bar:
+
+            R_batch = batch[0].to(device)
+            S_batch = batch[1].to(device)
+            N_batch = batch[2].to(device)
 
             # 获取类别标签
-            class_label = y_sample.item() if isinstance(y_sample, torch.Tensor) else y_sample
+            if self.config['task'] in ['classification']:
+                y_batch = batch[2]
+            elif self.config['task'] in ['regression']:
+                y_batch = batch[2]
+            elif self.config['task'] in ['cox']:
+                event_batch = batch[3]  # 生存分析的事件标签
+                # time_batch = batch[2]  # 如果需要时间信息可以启用
 
-            ig_score = integrated_gradients_for_genesets(
-                model=self.model,
-                R=R_sample.unsqueeze(0),
-                S=S_sample.unsqueeze(0),
-                steps=50
-            )
 
-            # 按类别存储结果
+            R_sample = R_batch.unsqueeze(0)
+            S_sample = S_batch.unsqueeze(0)
+            N_sample = N_batch.unsqueeze(0)
+
+            # 确定存储键名
+            if self.config['task'] in ['classification']:
+                class_label = y_batch.item()
+            elif self.config['task'] in ['regression']:
+                class_label = 'regression'
+            elif self.config['task'] in ['cox']:
+                class_label = f"event_{event_batch.item()}"  # 按事件状态分组
+            elif self.config['task'] in ['autoencoder']:
+                class_label = 'autoencoder'
+
+
+            if self.config['task'] in ['autoencoder']:
+                ig_score = integrated_gradients_for_genesets(
+                    model=self.model,
+                    R=R_sample,
+                    S=S_sample,
+                    N=N_sample,
+                    task_type=self.config['task'],  # 传递任务类型
+                    steps=50
+                )
+            else:
+                ig_score = integrated_gradients_for_genesets(
+                    model=self.model,
+                    R=R_sample,
+                    S=S_sample,
+                    N=N_sample,
+                    task_type=self.config['task'],  # 传递任务类型
+                    steps=50
+                )
+            # 按类别/任务类型存储结果
             if class_label not in class_ig_scores:
                 class_ig_scores[class_label] = []
             class_ig_scores[class_label].append(ig_score.cpu().detach().numpy())
@@ -67,7 +104,7 @@ class Explainer(object):
         # explain geneset
         self.indicate_gene_set_importance()
 
-def integrated_gradients_for_genesets(model, R, S, target_class=None, baseline=None, steps=50):
+def integrated_gradients_for_genesets(model, R, S, N=None, task_type=None, target_class=None, baseline=None, steps=50):
     """
     使用积分梯度解释基因集重要性
 
@@ -92,10 +129,13 @@ def integrated_gradients_for_genesets(model, R, S, target_class=None, baseline=N
         es_scores = model.gene_set_layer(R, S)  # (1, num_sets)
 
     # 确定目标类别
-    if target_class is None:
-        with torch.no_grad():
-            output = model(R, S)
-            target_class = torch.argmax(output, dim=1).item()
+    if task_type in ['classification']:
+        if target_class is None:
+            with torch.no_grad():
+                output = model(R, S)
+                target_class = torch.argmax(output, dim=1).item()
+    else:  # 回归或生存分析
+        target_class = None  # 不使用特定类别
 
     # 设置基线值
     if baseline is None:
@@ -116,13 +156,17 @@ def integrated_gradients_for_genesets(model, R, S, target_class=None, baseline=N
         interp_es = interp_es.clone().requires_grad_(True)
 
         # 根据分类器类型处理输出
-        if model.config['classifier'] == "attention":
-            logits, _ = model.classifier(interp_es)
-        else:
-            logits = model.classifier(interp_es)
+        if task_type in ['autoencoder']:
+            reconstructed = model.decoder(interp_es)
+            loss = torch.nn.functional.mse_loss(reconstructed, N)
+            # 使用负损失表示改善重构效果的影响
+            target_logit = -loss
 
-        # 获取目标类别的logit
-        target_logit = logits[0, target_class]
+        elif task_type in ['classification']:
+            logits = model.classifier(interp_es)
+            target_logit = logits[0, target_class]
+        else:  # 回归或生存分析
+            target_logit = logits.squeeze()  # 使用整个输出
 
         # 计算梯度
         grad = torch.autograd.grad(outputs=target_logit, inputs=interp_es)[0]
