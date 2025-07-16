@@ -1,15 +1,19 @@
 import os
 
 import numpy as np
+import pandas as pd
 import torch
-from sklearn.metrics import classification_report
+from sklearn.model_selection import RandomizedSearchCV
 from torch import nn
 import torch.nn.functional as F
+import joblib
 
 import shutil
 from utils.train_utils import cox_loss, BuildOptimizer
-from sklearn.metrics import silhouette_score
-
+from sklearn.metrics import (
+    accuracy_score, f1_score, roc_auc_score, confusion_matrix, classification_report, RocCurveDisplay,
+    mean_squared_error, mean_absolute_error, r2_score, silhouette_score
+)
 
 class Trainer(object):
 
@@ -17,15 +21,21 @@ class Trainer(object):
 
         self.config = config
         self.model = model
-        self.loader = loader.torch_loader
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # 裁剪梯度
-        self.scheduler, self.optimizer = BuildOptimizer(params=model.parameters(), config=config)
+        self.loader = loader
+
+        if config['model'] == "nnea":
+            self.init_nnea()
+
+    def init_nnea(self):
+        self.loader = self.loader.torch_loader
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # 裁剪梯度
+        self.scheduler, self.optimizer = BuildOptimizer(params=self.model.parameters(), config=self.config)
 
 
-        if config['task'] == "umap":
+        if self.config['task'] == "umap":
             self.umap_loss = UMAP_Loss(
-                n_neighbors=config['n_neighbors'],
-                min_dist=config['min_dist']
+                n_neighbors=self.config['n_neighbors'],
+                min_dist=self.config['min_dist']
             )
 
     def evaluate(self):
@@ -60,7 +70,7 @@ class Trainer(object):
 
                     _, predicted = torch.max(logits, 1)
                     batch_y = batch_data[2]
-                    correct += (predicted == batch_y.to(self.config["device"])).sum().item()
+                    correct += (predicted == batch_y.squeeze().to(self.config["device"])).sum().item()
 
                     # 累积预测值和标签
                     all_predictions.append(predicted.cpu())
@@ -145,7 +155,7 @@ class Trainer(object):
 
         if self.config['task'] in ['classification']:
             log_probs = logits
-            batch_y = batch_data[2].to(device, dtype=torch.long)
+            batch_y = batch_data[2].to(device, dtype=torch.long).squeeze()
             return nn.NLLLoss()(log_probs, batch_y)
 
         elif self.config['task'] in ['cox']:
@@ -206,7 +216,7 @@ class Trainer(object):
 
         return avg_loss, task_loss, reg_loss
 
-    def save_checkpoint(self, epoch):
+    def save_checkpoint(self):
 
         checkpoint_dir = self.config['checkpoint_dir']
         if not os.path.exists(checkpoint_dir):  # 先检查是否存在
@@ -215,7 +225,27 @@ class Trainer(object):
                 dest_path = os.path.join(checkpoint_dir, os.path.basename(source_file))
                 shutil.copy2(source_file, dest_path)  # 复制文件并保留元数据[6,8](@ref)
 
-        torch.save(self.model.state_dict(), self.config['check_point'])
+        if self.config['model'] in ['nnea']:
+            torch.save(self.model.state_dict(), os.path.join(self.config['checkpoint_dir'], "_checkpoint.pt"))
+
+        elif self.config['model'] in ['LR']:
+            test_metrics, test_pred = self.evaluate_model(self.model, self.loader.X_test, self.loader.y_test)
+            print("best params: %s" % self.model.get_params)
+            print("best metrics: %s" % test_metrics)
+            print(classification_report(self.loader.y_test, test_pred))
+
+            joblib.dump(self.model,  os.path.join(self.config['checkpoint_dir'], "_checkpoint.pkl"))
+            with open(os.path.join(self.config['checkpoint_dir'], "test_result.txt"), 'w') as f:
+                f.write(f"Best Params: {self.model.get_params}\n")
+                f.write(f"Test Metrics: {test_metrics}\n")
+                f.write("Classification Report:\n")
+                f.write(classification_report(self.loader.y_test, test_pred))
+
+            results_df = pd.DataFrame({
+                'true_label': self.loader.y_test,
+                'predicted_label': test_pred
+            })
+            results_df.to_csv(os.path.join(self.config['checkpoint_dir'], "'predictions.csv"), index=False)
 
     def save_model(self, epoch):
 
@@ -271,14 +301,13 @@ class Trainer(object):
                   f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
                   f"Silhouette Loss: {self.silhouette_loss:.4f}")
 
-
-    def train(self):
+    def train_nnea(self):
 
         # 初始化早停相关变量（同时监控训练损失和验证指标）
         self.best_metric = -float('inf') if self.config['task'] in ['classification', 'cox'] else float('inf')
         self.best_avg_loss = float('inf')  # 新增：追踪最佳训练损失
-        self.patience_counter_metric = 0   # 验证指标无改善的计数器
-        self.patience_counter_loss = 0      # 训练损失无改善的计数器
+        self.patience_counter_metric = 0  # 验证指标无改善的计数器
+        self.patience_counter_loss = 0  # 训练损失无改善的计数器
 
         for epoch in range(self.config['num_epochs']):
 
@@ -311,6 +340,62 @@ class Trainer(object):
                     self.patience_counter_loss >= self.config['patience_loss']):
                 print(f"Early stopping at epoch {epoch}")
                 break
+
+    def evaluate_model(self, model, X, y):
+        """评估模型性能并返回指标字典"""
+        pred = model.predict(X)
+
+        if self.config['task'] == 'classification':
+            metrics = {
+                "Accuracy": accuracy_score(y, pred),
+                "F1": f1_score(y, pred, average='weighted'),
+            }
+            try:
+                proba = model.predict_proba(X)[:, 1]
+                metrics["AUC"] = roc_auc_score(y, proba)
+            except:
+                metrics["AUC"] = None
+        elif self.config['task'] == 'regression':  # 回归任务
+            metrics = {
+                "MSE": mean_squared_error(y, pred),
+                "MAE": mean_absolute_error(y, pred),
+                "R2": r2_score(y, pred)
+            }
+        return metrics, pred
+
+    def train(self):
+
+        if self.config['model'] in ["nnea"]:
+            self.train_nnea()
+
+        elif self.config['model'] in ["LR"]:
+
+            if self.config['train_mod'] == "cross_validation":
+                searcher = RandomizedSearchCV(
+                    estimator=self.model["model"],
+                    param_distributions=self.model["params"],
+                    n_iter=15,
+                    cv=self.loader.cv,
+                    scoring=self.config["scoring"],
+                    n_jobs=-self.config['n_jobs'],
+                    verbose=self.config['verbose'],
+                    random_state=self.config['seed']
+                )
+
+                searcher.fit(self.loader.X_train, self.loader.y_train)
+
+
+                # 保存最佳模型
+                self.model = searcher.best_estimator_
+                self.save_checkpoint()
+
+
+            elif self.config['train_mod'] == "one_split":
+                self.model.fit(self.loader.X_train, self.loader.y_train)
+                test_metrics, test_pred = self.evaluate_model(self.model, self.loader.X_test, self.loader.y_test)
+                print(classification_report(self.loader.y_test, test_pred))
+
+
 
 
 class UMAP_Loss(nn.Module):

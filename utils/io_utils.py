@@ -8,6 +8,8 @@ import toml
 import time
 
 from scipy.sparse import csc_matrix, csr_matrix
+from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
+from sklearn.preprocessing import StandardScaler
 
 
 def flatten_dict(nested_dict, parent_key='', sep='.'):
@@ -41,20 +43,23 @@ def LoadConfig(path):
 
     config = toml.load(path)
 
+    # extract config
+    if config['gobal']['model'] == "LR":
+        config = {**config["LR"], **config["gobal"], **config["dataload"], **config["trainer"]}
+
     "flatten config dictionary"
     config = flatten_dict(config)
     config['toml_path'] = path
 
     "generate storage path"
     formatted_date = time.strftime("%Y_%m_%d_%H_%M", time.localtime())
-    checkpoint_dir = "checkpoints/" + formatted_date + "_" + config['dataset']
+    checkpoint_dir = "checkpoints/" + formatted_date + "_" + config['dataset'] + "_" + config['model']
     config['checkpoint_dir'] = checkpoint_dir
-    config['check_point'] = os.path.join(config['checkpoint_dir'],   "_checkpoint.pt")
 
     "define task"
     if config['task'] in ["cell_drug", "cell_dependency", "regression"]:
         config['task'] = "regression"
-    elif config['task'] in ["cell_class", "tumor_drug", "sc_classification", "sc_annotation", "classification"] :
+    elif config['task'] in ["tumor_immunotherapy", "cell_class", "tumor_drug", "sc_classification", "sc_annotation", "classification"] :
         config['task'] = "classification"
     elif config['task'] in ["tumor_sur", "cox"]:
         config['task'] = "cox"
@@ -116,6 +121,7 @@ class Loader(object):
             shuffle=True
         )
 
+
     def load_dataset(self):
 
         print("Loading dataset: %s..." % self.config['dataset'])
@@ -130,6 +136,51 @@ class Loader(object):
             phe = hf['phe'][:]
             self.sample_ids = [x.decode('utf-8') for x in hf['sample_id'][:]]
 
+        if self.config['model'] in ['nnea']:
+            self.load_torch_dataset( rank_exp, sort_exp, norm_exp, phe, pca)
+
+        elif self.config['model'] in ['LR']:
+
+            X = norm_exp
+            if self.config['scaler'] == "mean_sd":
+                X = scale_dense_matrix(X, standardize_method="mean_sd")
+
+            elif self.config['scaler'] == "min_max":
+                X = scale_dense_matrix(X, standardize_method="min_max")
+
+            if self.config['top_gene']:
+                X = retain_top_var_gene(X, top_gene=self.config['top_gene'])
+
+            y = phe.flatten()
+
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=self.config['test_size'], random_state=self.config['seed']
+            )
+
+            if self.config['scaler'] == "mean_sd":
+                scaler = StandardScaler()
+                X_train = scaler.fit_transform(X_train)
+                X_test = scaler.transform(X_test)
+
+            if self.config['strategy'] == "StratifiedKFold":
+                cv = StratifiedKFold(
+                    n_splits=self.config['n_splits'],
+                    shuffle=self.config['shuffle'],
+                    random_state=self.config['seed']
+                )
+            elif self.config['strategy'] == "KFold":
+                cv = KFold(
+                    n_splits=self.config['n_splits'],
+                    shuffle=self.config['shuffle'],
+                    random_state=self.config['seed']
+                )
+
+            self.X_train, self.X_test = X_train, X_test
+            self.y_train, self.y_test = y_train, y_test
+            self.cv = cv
+
+    def load_torch_dataset(self, rank_exp, sort_exp, norm_exp, phe, pca):
+
         rank_exp_tensor = torch.tensor(rank_exp, dtype=torch.float32)
         sort_exp_tensor = torch.tensor(sort_exp, dtype=torch.long)
 
@@ -140,50 +191,119 @@ class Loader(object):
             events_tensor = torch.tensor(phe[:,0], dtype=torch.float32)
             times_tensor = torch.tensor(phe[:,1], dtype=torch.float32)
 
+            base_dataset = (rank_exp_tensor, sort_exp_tensor, times_tensor, events_tensor)
+            targets = phe[:, 0]
 
-            dataset = torch.utils.data.TensorDataset(
-                rank_exp_tensor,
-                        sort_exp_tensor,
-                        times_tensor,
-                        events_tensor
-            )
 
         elif self.config['task'] in ['classification', "regression"]:
 
             y_tensor = torch.tensor(phe, dtype=torch.float32)
-
-            dataset = torch.utils.data.TensorDataset(
-                rank_exp_tensor,
-                sort_exp_tensor,
-                y_tensor
-            )
+            base_dataset = (rank_exp_tensor, sort_exp_tensor, y_tensor)
+            targets = phe.flatten()  # 目标变量作为分层依据
 
         elif self.config['task'] in ['autoencoder']:
 
             norm_exp_tensor = torch.tensor(norm_exp, dtype=torch.float32)
+            base_dataset = (rank_exp_tensor, sort_exp_tensor, norm_exp_tensor)
+            targets = None
 
-            dataset = torch.utils.data.TensorDataset(
-                rank_exp_tensor,
-                sort_exp_tensor,
-                norm_exp_tensor
-            )
         elif self.config['task'] in ['umap']:
 
             pca_tensor = torch.tensor(pca[:,:self.config['pca_dim']], dtype=torch.float32)
             y_tensor = torch.tensor(phe, dtype=torch.float32)
+            base_dataset = (rank_exp_tensor, sort_exp_tensor, pca_tensor, y_tensor)
+            targets = phe.flatten()
 
-            dataset = torch.utils.data.TensorDataset(
-                rank_exp_tensor,
-                sort_exp_tensor,
-                pca_tensor,
-                y_tensor
+        self.cv_loaders = []
+        self.split_dataset(base_dataset, targets)
+
+    def split_dataset(self, base_dataset, targets):
+
+        n_samples = base_dataset[0].shape[0]
+        indices = np.arange(n_samples)
+
+        stratify = targets if self.config['task'] == 'classification' else None
+
+        train_idx, test_idx = train_test_split(
+            indices,
+            test_size=self.config['test_size'],
+            stratify=stratify,  # 添加分层抽样
+            random_state=self.config['seed']
+        )
+
+        # 创建训练集和测试集的TensorDataset
+        train_dataset = torch.utils.data.TensorDataset(
+            *[tensor[train_idx] for tensor in base_dataset]
+        )
+        test_dataset = torch.utils.data.TensorDataset(
+            *[tensor[test_idx] for tensor in base_dataset]
+        )
+
+        # 创建测试集loader（不洗牌）
+        self.test_loader = torch.utils.data.DataLoader(
+            test_dataset,
+            batch_size=self.config['batch_size'],
+            shuffle=False
+        )
+
+        # 保存测试集索引
+        self.test_indices = test_idx
+
+        # 生成交叉验证划分
+        self.split_cross_validation(train_dataset, targets[train_idx])
+
+    def split_cross_validation(self, base_dataset, targets=None):
+        """生成交叉验证数据划分"""
+        n_samples =  len(base_dataset)
+        indices = np.arange(n_samples)
+
+        # 选择交叉验证策略
+        if self.config['strategy'] == "StratifiedKFold":
+            cv = StratifiedKFold(
+                n_splits=self.config['n_splits'],
+                shuffle=self.config['shuffle'],
+                random_state=self.config['seed']
+            )
+            splits = cv.split(indices, targets)
+        elif self.config['strategy'] == "KFold":
+            cv = KFold(
+                n_splits=self.config['n_splits'],
+                shuffle=self.config['shuffle'],
+                random_state=self.config['seed']
+            )
+            splits = cv.split(indices)
+
+        tensors = base_dataset.tensors
+
+        # 创建每个fold的数据加载器
+        for fold, (train_idx, valid_idx) in enumerate(splits):
+            # 创建训练集和验证集
+            train_dataset = torch.utils.data.TensorDataset(
+                *[tensor[train_idx] for tensor in tensors]
+            )
+            valid_dataset = torch.utils.data.TensorDataset(
+                *[tensor[valid_idx] for tensor in tensors]
             )
 
-        self.torch_loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=self.config['batch_size'],
-            shuffle=True
-        )
+            # 创建数据加载器
+            train_loader = torch.utils.data.DataLoader(
+                train_dataset,
+                batch_size=self.config['batch_size'],
+                shuffle=True
+            )
+            valid_loader = torch.utils.data.DataLoader(
+                valid_dataset,
+                batch_size=self.config['batch_size'],
+                shuffle=False
+            )
+
+            self.cv_loaders.append({
+                'fold': fold,
+                'train': train_loader,
+                'valid': valid_loader,
+                'train_indices': train_idx,
+                'valid_indices': valid_idx
+            })
 
     def storage_dataset(self, dataset):
 
@@ -268,16 +388,17 @@ class Loader(object):
             gene = exp["Gene"].tolist()
             rank_exp, sort_exp = self.expToRank(exp.drop(exp.columns[0], axis=1).T)
             sample = rank_exp.index.tolist()
-            norm_exp = normalize_matrix_dense_cell_by_gene(mat=exp)
+            # norm_exp = normalize_matrix_dense_cell_by_gene(mat=(exp.drop(exp.columns[0], axis=1)))
+            norm_exp = exp.drop(exp.columns[0], axis=1).T
 
             dataset = {
                 "gene": gene,
                 "sample_id": sample,
-                "rank_exp": rank_exp.values(),
+                "rank_exp": rank_exp,
                 "sort_exp": sort_exp,
                 "norm_exp": norm_exp,
-                "pca": None,
-                "phe": phe.values()
+                "pca": np.array([0]),
+                "phe": phe
             }
 
         self.storage_dataset(dataset)
@@ -327,7 +448,9 @@ def normalize_matrix_sparse_cell_by_gene(mat, scale_factor=10000):
     return scaled_matrix
 
 
-# 新增归一化函数（密集矩阵版）
+import numpy as np
+
+
 def normalize_matrix_dense_cell_by_gene(mat, scale_factor=10000):
     """
     细胞×基因密集矩阵归一化（行为细胞，列为基因）
@@ -337,18 +460,71 @@ def normalize_matrix_dense_cell_by_gene(mat, scale_factor=10000):
         密集矩阵，行对应细胞，列对应基因
     scale_factor : int, 默认10000
         缩放因子
+    standardize_method : str, 可选
+        标准化方法: 'min_max', 'mean_sd' 或 None(默认)
 
     返回:
-    numpy.ndarray - 归一化后的矩阵
+    numpy.ndarray - 处理后的矩阵
     """
-    # 计算每个细胞的总UMI（行求和）
+    # 转换输入为numpy数组
+    mat = np.asarray(mat)
     total_umi = np.sum(mat, axis=1, keepdims=True)
 
     # 避免除零错误
     total_umi[total_umi == 0] = 1e-12
 
-    # 执行归一化
+    # 执行CPM归一化和log变换
     scaled_matrix = (mat / total_umi) * scale_factor
     normalized_matrix = np.log1p(scaled_matrix)
 
     return normalized_matrix
+
+
+def scale_dense_matrix(normalized_matrix, standardize_method="mean_sd"):
+
+    # 执行指定标准化方法
+    if standardize_method == 'min_max':
+        # 按基因(列)进行min-max标准化
+        col_min = np.min(normalized_matrix, axis=0, keepdims=True)
+        col_max = np.max(normalized_matrix, axis=0, keepdims=True)
+
+        # 避免分母为零
+        range_mask = (col_max - col_min) > 1e-12
+        standardized = np.empty_like(normalized_matrix)
+
+        # 仅对变化范围>1e-12的基因标准化
+        standardized[:, range_mask.flatten()] = (
+                (normalized_matrix[:, range_mask.flatten()] - col_min[:, range_mask.flatten()]) /
+                (col_max[:, range_mask.flatten()] - col_min[:, range_mask.flatten()])
+        )
+        # 保持常量值不变
+        standardized[:, ~range_mask.flatten()] = 0.0
+
+        return standardized
+
+    elif standardize_method == 'mean_sd':
+        # 按基因(列)进行z-score标准化
+        col_mean = np.mean(normalized_matrix, axis=0, keepdims=True)
+        col_std = np.std(normalized_matrix, axis=0, keepdims=True)
+
+        # 避免除零错误
+        std_mask = col_std > 1e-12
+        standardized = np.empty_like(normalized_matrix)
+
+        # 仅对标准差>1e-12的基因标准化
+        standardized[:, std_mask.flatten()] = (
+                (normalized_matrix[:, std_mask.flatten()] - col_mean[:, std_mask.flatten()]) /
+                col_std[:, std_mask.flatten()]
+        )
+        # 保持常量值不变
+        standardized[:, ~std_mask.flatten()] = 0.0
+
+        return standardized
+
+
+def retain_top_var_gene(exp, top_gene):
+    variances = np.var(exp, axis=0)  # 形状 (18065,)
+    top_2000_idx = np.argsort(variances)[::-1][:top_gene]  # 降序排列取前2000
+    exp = exp[:, top_2000_idx]
+
+    return exp

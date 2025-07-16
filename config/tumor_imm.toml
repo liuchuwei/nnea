@@ -1,0 +1,75 @@
+[gobal]
+    seed = 888888888
+    device = "cuda"
+    dataset = 'imm_response'
+    task = "tumor_immunotherapy" # tumor_sur, cell_class, tumor_drug, tumor_immunotherapy
+    model = "LR" # nnea
+
+[trainer]
+    batch_size = 64
+    num_epochs = 10000
+    patience_metric = 1
+    patience_loss = 5
+    verbose = 0
+    n_jobs = 1
+    scoring = 'roc_auc' # neg_mean_squared_error
+    train_mod = "cross_validation" # cross_validation
+
+[dataload]
+    test_size = 0.1
+    val_size = 0.1
+    strategy  = "StratifiedKFold"
+    n_splits = 5
+    shuffle = true
+    scaler = "min_max"
+    top_gene = 10
+
+[LR] #  Logistic_Regression
+    max_iter = 5000
+    penalty = ["l1", "l2", "elasticnet"]
+#    penalty = "l1"
+    solver = ["saga"]
+#    solver = "saga"
+#    hyper_C = 1.96
+    hyper_C_type = "loguniform"
+    hyper_C_min = 1e-3
+    hyper_C_max = 1e3
+
+[nnea]
+
+    [piror_knowldege]
+        use_piror_knowldege = false
+        piror_path = "data/genesets/c1.all.v2025.1.Hs.symbols.gmt"
+        freeze_prior = false
+
+    [geneset_layer]
+        geneset_layer_mode = "one_mode" # one_mode; deep_mod
+        use_piror_knowldege = false
+        geneset_layer_alpha = 0.25
+        num_sets = 20
+        set_min_size = 10
+        set_max_size = 50
+        num_fc_layers = 0
+
+    [deep_mod]
+        geneset_layers = 2
+        sub_num_genesets = 10
+
+    [classifier]
+        classifier_name = 'linear' # linear or attention
+        hidden_dims = [128, 64, 32]
+        output_dim = 2
+        classifier_dropout = [0.4, 0.3]
+        class_names = [0, 1]
+
+
+    [optimizer]
+        lr = 0.001
+        opt = "adam"
+        opt_scheduler = "reduce"
+        opt_factor = 0.5
+        opt_patience = 5
+        weight_decay = 1e-5
+
+
+

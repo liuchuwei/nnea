@@ -39,8 +39,6 @@ def main(args):
 
     "5.build model"
     model = LoadModel(config, loader)
-    model.build_model()
-    model.to(config['device'])
 
     "5.train model"
     trainer = Trainer(config, model, loader)
