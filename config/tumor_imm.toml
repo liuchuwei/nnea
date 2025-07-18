@@ -4,7 +4,7 @@
     task = "tumor_immunotherapy" # tumor_sur, cell_class, tumor_drug, tumor_immunotherapy
     model = "nnea" # nnea, LR
     train_mod = "cross_validation" # one_split
-    n_iter = 5
+    n_iter = 5000
 
 [trainer]
     num_epochs = 10000

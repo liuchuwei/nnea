@@ -69,6 +69,7 @@ class CrossTrainer(object):
 
             avg_score = np.mean(fold_scores)
             results.append((params, avg_score, fold_scores))
+            self.save_cv_results(results)
 
             # 更新最佳参数
             if avg_score > self.best_score:
@@ -76,7 +77,6 @@ class CrossTrainer(object):
                 self.best_params = params
                 best_fold = np.argmax(fold_scores)
                 print(f"🔥 New best params! Score: {avg_score:.4f}")
-
 
         print(f"\n🚀 Training final model with best params: {self.best_params}")
         self.model_config.update(self.best_params)
@@ -97,7 +97,7 @@ class CrossTrainer(object):
 
         # 保存交叉验证结果
         results.append((self.best_params, "<-best param; best fold->", best_fold))
-        self.save_cv_results(results)
+
 class Trainer(object):
 
     def __init__(self, config, model, loader):
