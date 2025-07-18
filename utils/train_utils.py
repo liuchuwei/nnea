@@ -127,6 +127,7 @@ def BuildGenesetLayer(config, prior_tensor = None):
         prior_knowledge=prior_tensor,
         freeze_prior=config['freeze_prior'],
         num_fc_layers=config['num_fc_layers'],
+        geneset_dropout=config['geneset_dropout']
     )
         
 

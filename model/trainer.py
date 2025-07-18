@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.model_selection import RandomizedSearchCV, ParameterSampler
-from torch import nn
+from torch import nn, tensor
 import torch.nn.functional as F
 import joblib
 
@@ -21,7 +21,7 @@ class OneSplitTrainer(object):
     def __init__(self, trainer_config, model_config, global_config, loader):
         self.model_config = {**global_config, **model_config, **trainer_config}
         self.loader = loader
-        self.train_loader = {"train": loader.train_dataset, "valid":loader.val_dataset}
+        self.train_loader = {"train": loader.train_dataset, "valid":loader.val_dataset, "targets":loader.targets}
 
     def train(self):
 
@@ -160,9 +160,11 @@ class Trainer(object):
             shuffle=False
         )
 
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # 裁剪梯度
         self.scheduler, self.optimizer = BuildOptimizer(params=self.model.parameters(), config=self.config)
 
+        class_counts = np.bincount(self.loader['targets'].astype(int))
+        self.class_weights = tensor(len(self.loader['targets']) / (len(class_counts) * class_counts), dtype=torch.float).to(
+            self.config['device'])
 
         if self.config['task'] == "umap":
             self.umap_loss = UMAP_Loss(
@@ -305,7 +307,7 @@ class Trainer(object):
         if self.config['task'] in ['classification']:
             log_probs = logits
             batch_y = batch_data[2].to(device, dtype=torch.long).squeeze()
-            return nn.NLLLoss()(log_probs, batch_y)
+            return nn.NLLLoss(weight=self.class_weights)(log_probs, batch_y)
 
         elif self.config['task'] in ['cox']:
             risks = logits
@@ -385,7 +387,7 @@ class Trainer(object):
 
             # 反向传播
             total_batch_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 2.0)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
             self.optimizer.step()
 
             total_loss += total_batch_loss.item()

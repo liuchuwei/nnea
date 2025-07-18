@@ -20,16 +20,22 @@ class TrainableGeneSetLayer(nn.Module):
 
     def __init__(self, num_genes, num_sets, min_set_size=10, max_set_size=50,
                  alpha=0.25, num_fc_layers=0, is_deep_layer=False, layer_index=0,
-                 prior_knowledge=None, freeze_prior=True
+                 prior_knowledge=None, freeze_prior=True, geneset_dropout=0.3
                  ):
         super().__init__()
         self.num_genes = num_genes
         self.num_sets = num_sets
-        self.alpha = alpha
+        # self.alpha = alpha
+        self.alpha = nn.Parameter(torch.tensor(0.25))
         self.is_deep_layer = is_deep_layer
         self.layer_index = layer_index
         self.prior_knowledge = prior_knowledge
         self.num_fc_layers = num_fc_layers
+        self.geneset_dropout = nn.Dropout(p=geneset_dropout)
+
+        # 新增可配置参数
+        self.size_reg_weight = nn.Parameter(torch.tensor(0.1))  # 可学习权重
+        self.diversity_reg_weight = nn.Parameter(torch.tensor(0.5))
 
         # 初始化成员关系矩阵
         if prior_knowledge is not None:
@@ -107,6 +113,7 @@ class TrainableGeneSetLayer(nn.Module):
                 indicators
             )
 
+        indicators = self.geneset_dropout(indicators)
         return indicators
 
     def regularization_loss(self):
@@ -144,6 +151,7 @@ class TrainableGeneSetLayer(nn.Module):
             base_loss = 0.05 * depth_loss + 0.2 * entropy_loss + 0.5 * diversity_loss
         else:
             base_loss = 0.1 * size_min_loss + 0.1 * size_max_loss + 0.2 * entropy_loss + 0.5 * diversity_loss
+            # base_loss = self.size_reg_weight *(size_min_loss +  size_max_loss) + 0.2 * entropy_loss + self.diversity_reg_weight * diversity_loss
 
         return base_loss
 
@@ -180,7 +188,8 @@ class TrainableGeneSetLayer(nn.Module):
         # 计算正集加权 (alpha=0.25)
         clamped_input = torch.clamp(R_sorted * sorted_indicators, min=1e-8, max=1e4)
         # weighted_pos = (R_sorted * sorted_indicators) ** self.alpha
-        weighted_pos = clamped_input ** self.alpha
+        # weighted_pos = clamped_input ** self.alpha
+        weighted_pos = clamped_input ** torch.sigmoid(self.alpha)
         sum_weighted_pos = torch.sum(weighted_pos, dim=2, keepdim=True)  # (batch_size, num_sets, 1)
 
         # 计算正集累积分布 (避免除零)
