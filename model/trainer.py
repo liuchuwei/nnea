@@ -3,18 +3,101 @@ import os
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV, ParameterSampler
 from torch import nn
 import torch.nn.functional as F
 import joblib
 
 import shutil
-from utils.train_utils import cox_loss, BuildOptimizer
+from utils.train_utils import cox_loss, BuildOptimizer, LoadModel
 from sklearn.metrics import (
     accuracy_score, f1_score, roc_auc_score, confusion_matrix, classification_report, RocCurveDisplay,
     mean_squared_error, mean_absolute_error, r2_score, silhouette_score
 )
 
+class CrossTrainer(object):
+
+    def __init__(self, trainer_config, model_config, global_config, loader):
+        self.model_config = {**global_config, **model_config, **trainer_config}
+        self.loader = loader
+        self.best_params = None  # 存储最佳参数
+        self.best_score = -float('inf')  # 存储最佳得分
+
+    def train_single_model(self, fold_data):
+
+        model = LoadModel(self.model_config, self.loader)
+
+        # 创建Trainer并训练
+        trainer = Trainer(self.model_config, model, fold_data)
+        trainer.train()
+
+        # 返回验证集性能
+        return trainer.get_validation_metric()
+
+    def save_cv_results(self, results):
+        """保存交叉验证结果"""
+        df = pd.DataFrame([{
+            'params': str(r[0]),
+            'avg_score': r[1],
+            'fold_scores': str(r[2])
+        } for r in results])
+        df.to_csv(os.path.join(self.model_config['checkpoint_dir'], 'cv_results.csv'), index=False)
+
+    def train(self):
+
+        param_grid = {
+            "lr" : self.model_config['lr'],
+            "weight_decay" : self.model_config['weight_decay'],
+            "classifier_dropout": self.model_config['classifier_dropout'],
+            "num_sets": range(self.model_config['num_sets'][0],
+                              self.model_config['num_sets'][1],
+                              self.model_config['num_sets'][2]),
+            "batch_size" : self.model_config['batch_size'],
+        }
+
+        param_samples = list(ParameterSampler(param_grid, n_iter=self.model_config['n_iter']))
+        results = []
+
+        for params in param_samples:
+            print(f"\nEvaluating hyperparameters: {params}")
+            fold_scores = []
+            self.model_config.update(params)
+            for item in self.loader.cv_loaders:
+
+                score = self.train_single_model(item)
+                fold_scores.append(score)
+
+            avg_score = np.mean(fold_scores)
+            results.append((params, avg_score, fold_scores))
+
+            # 更新最佳参数
+            if avg_score > self.best_score:
+                self.best_score = avg_score
+                self.best_params = params
+                best_fold = np.argmax(fold_scores)
+                print(f"🔥 New best params! Score: {avg_score:.4f}")
+
+
+        print(f"\n🚀 Training final model with best params: {self.best_params}")
+        self.model_config.update(self.best_params)
+        final_model = LoadModel(self.model_config, self.loader)
+        final_trainer = Trainer(self.model_config, final_model, self.loader.cv_loaders[best_fold])
+        final_trainer.train()
+        test_loader = torch.utils.data.DataLoader(
+            self.loader.test_dataset,
+            batch_size=self.model_config['batch_size'],
+            shuffle=False
+        )
+        final_trainer.evaluate(loader=test_loader)
+
+        print(classification_report(final_trainer.all_targets, final_trainer.all_predictions))
+
+        with open(os.path.join(self.model_config['checkpoint_dir'], "test_result.txt"), 'w') as f:
+            f.write(classification_report(final_trainer.all_targets, final_trainer.all_predictions))
+
+        # 保存交叉验证结果
+        results.append((self.best_params, "<-best param; best fold->", best_fold))
+        self.save_cv_results(results)
 class Trainer(object):
 
     def __init__(self, config, model, loader):
@@ -27,7 +110,19 @@ class Trainer(object):
             self.init_nnea()
 
     def init_nnea(self):
-        self.loader = self.loader.torch_loader
+        # self.loader = self.loader.torch_loader
+
+        self.train_loader = torch.utils.data.DataLoader(
+            self.loader['train'],
+            batch_size=self.config['batch_size'],
+            shuffle=True
+        )
+        self.valid_loader = torch.utils.data.DataLoader(
+            self.loader['valid'],
+            batch_size=self.config['batch_size'],
+            shuffle=False
+        )
+
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # 裁剪梯度
         self.scheduler, self.optimizer = BuildOptimizer(params=self.model.parameters(), config=self.config)
 
@@ -38,7 +133,8 @@ class Trainer(object):
                 min_dist=self.config['min_dist']
             )
 
-    def evaluate(self):
+
+    def evaluate(self, loader):
 
         self.model.eval()
         total_samples = 0
@@ -55,7 +151,7 @@ class Trainer(object):
         all_targets = []  # 存储所有真实标签
 
         with torch.no_grad():
-            for batch_data in self.loader:
+            for batch_data in loader:
 
                 device = self.config['device']
                 batch_R, batch_S = batch_data[0].to(device),  batch_data[1].to(
@@ -115,6 +211,9 @@ class Trainer(object):
                 all_preds = torch.cat(all_predictions).numpy()
                 all_targets = torch.cat(all_targets).numpy()
 
+                self.all_predictions = all_preds
+                self.all_targets = all_targets
+
                 # 计算每个类别的精确率、召回率和F1分数
                 self.classification_report = classification_report(
                     all_targets, all_preds,
@@ -151,6 +250,19 @@ class Trainer(object):
                 pearson_corr = np.corrcoef(all_preds, all_targets)[0, 1]
                 self.pearson = pearson_corr if not np.isnan(pearson_corr) else 0.0
 
+    def get_validation_metric(self):
+        """获取验证集性能指标"""
+
+        # 根据任务类型返回关键指标
+        if self.config['task'] == "classification":
+            return self.macro_f1
+        elif self.config['task'] == "cox":
+            return self.accuracy
+        elif self.config['task'] == "regression":
+            return -self.mse  # 负MSE（越大越好）
+        elif self.config['task'] == "umap":
+            return self.silhouette_loss
+
     def get_task_loss(self, logits, batch_data, device):
 
         if self.config['task'] in ['classification']:
@@ -180,12 +292,41 @@ class Trainer(object):
             inputs = batch_data[2].to(device, dtype=torch.float)
             return self.umap_loss(embeddings, inputs)
 
+    def calculate_loss(self, loader):
+
+        self.model.eval()
+        total_loss = 0.0
+
+        # for batch_R, batch_S, batch_y in self.loader:
+        for batch_data in loader:
+            device = self.config['device']
+            batch_R, batch_S = batch_data[0].to(device), batch_data[1].to(
+                device)
+
+            # 前向传播
+            logits = self.model(batch_R, batch_S)
+
+            # 计算分类损失
+            task_loss = self.get_task_loss(logits, batch_data, device=self.config['device'])
+
+            # 计算正则化损失
+            reg_loss = self.model.regularization_loss()
+
+            # 总损失（分类损失+正则化损失）
+            total_batch_loss = task_loss + reg_loss
+
+            total_loss += total_batch_loss.item()
+
+        avg_loss = total_loss / len(self.loader)
+
+        return avg_loss, task_loss, reg_loss
+
     def one_epoch(self):
         self.model.train()
         total_loss = 0.0
 
         # for batch_R, batch_S, batch_y in self.loader:
-        for batch_data in self.loader:
+        for batch_data in self.train_loader:
 
             device = self.config['device']
             batch_R, batch_S = batch_data[0].to(device),  batch_data[1].to(
@@ -265,41 +406,70 @@ class Trainer(object):
 
         if improved:
             self.best_metric = current_metric
-            self.save_checkpoint(epoch)
+            self.save_checkpoint()
 
         return improved
     def print_process(self, epoch, task_loss, reg_loss, avg_loss):
 
         if self.config['task'] in ['classification']:
 
-            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
                   f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Accuracy: {self.accuracy:.4f} "
-                  f"Macro F1: {self.macro_f1:.4f}, "
-                  f"Weighted F1: {self.weighted_f1:.4f}"
+                  f"Train accuracy: {self.accuracy:.4f} "
+                  f"Train macro f1: {self.macro_f1:.4f}, "
+                  f"Train weighted f1: {self.weighted_f1:.4f}, "
                   )
+            self.evaluate(loader=self.valid_loader)
+
+            info += (f"Val accuracy: {self.accuracy:.4f} "
+                  f"Val macro f1: {self.macro_f1:.4f}, "
+                  f"Val weighted f1: {self.weighted_f1:.4f}")
+
+            print(info)
 
         elif self.config['task'] in ['cox']:
 
-            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
                   f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Diff risk: {self.accuracy:.4f}, "
-                  f"High risk: {self.high_risk:.4f}, Low risk: {self.low_risk:.4f}, ")
+                  f"Train diff risk: {self.accuracy:.4f}, "
+                  f"Train high risk: {self.high_risk:.4f}, Train low risk: {self.low_risk:.4f}, ")
+
+            self.evaluate(loader=self.valid_loader)
+
+            info += (
+                  f"Val diff risk: {self.accuracy:.4f}, "
+                  f"Val high risk: {self.high_risk:.4f}, Val low risk: {self.low_risk:.4f}")
+
+            print(info)
+
 
         elif self.config['task'] in ['regression']:
-            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
                   f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"MSE: {self.mse:.4f}, MAE: {self.mae:.4f}, PCC: {self.pearson:.4f}")
+                  f"Train mse: {self.mse:.4f}, Train mae: {self.mae:.4f}, Train pcc: {self.pearson:.4f}, ")
+
+            self.evaluate(loader=self.valid_loader)
+            info += (f"Val mse: {self.mse:.4f}, Val mae: {self.mae:.4f}, Val pcc: {self.pearson:.4f}")
+
+            print(info)
 
         elif self.config['task'] in ['autoencoder']:
-            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
                   f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Recon Loss: {self.recon_loss:.4f}")
+                  f"Train rec Loss: {self.recon_loss:.4f}, ")
+
+            self.evaluate(loader=self.valid_loader)
+            info += (f"Train rec Loss: {self.recon_loss:.4f}")
+            print(info)
 
         elif self.config['task'] in ['umap']:
-            print(f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
                   f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Silhouette Loss: {self.silhouette_loss:.4f}")
+                  f"Silhouette Loss: {self.silhouette_loss:.4f}, ")
+
+            self.evaluate(loader=self.valid_loader)
+            info += (f"Silhouette Loss: {self.silhouette_loss:.4f}")
+            print(info)
 
     def train_nnea(self):
 
@@ -312,11 +482,16 @@ class Trainer(object):
         for epoch in range(self.config['num_epochs']):
 
             avg_loss, task_loss, reg_loss = self.one_epoch()
-            self.evaluate()
+            self.evaluate(loader=self.train_loader)
             self.scheduler.step(avg_loss)
+
+            # 打印训练信息
+            self.print_process(epoch, task_loss, reg_loss, avg_loss)
 
             # 关键修改：同时监控训练损失和验证指标
             improved_metric = self.save_model(epoch)  # 验证指标是否提升
+
+            avg_loss, task_loss, reg_loss = self.calculate_loss(loader = self.valid_loader)
             improved_loss = avg_loss < self.best_avg_loss  # 训练损失是否降低
 
             # 更新最佳损失
@@ -332,12 +507,11 @@ class Trainer(object):
             else:
                 self.patience_counter_metric = 0
 
-            # 打印训练信息
-            self.print_process(epoch, task_loss, reg_loss, avg_loss)
 
             # 早停条件：训练损失或验证指标连续恶化
-            if (self.patience_counter_metric >= self.config['patience_metric'] and
-                    self.patience_counter_loss >= self.config['patience_loss']):
+            # if (self.patience_counter_metric >= self.config['patience_metric'] and
+            #         self.patience_counter_loss >= self.config['patience_loss']):
+            if (self.patience_counter_loss >= self.config['patience_loss']):
                 print(f"Early stopping at epoch {epoch}")
                 break
 
@@ -362,6 +536,7 @@ class Trainer(object):
                 "R2": r2_score(y, pred)
             }
         return metrics, pred
+
 
     def train(self):
 

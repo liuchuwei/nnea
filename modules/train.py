@@ -4,7 +4,7 @@ import argparse
 from argparse import ArgumentDefaultsHelpFormatter
 import torch
 
-from model.trainer import Trainer
+from model.trainer import Trainer, CrossTrainer
 from utils.train_utils import SetSeed, LoadModel, SetDevice
 from utils.io_utils import Loader, LoadConfig
 
@@ -25,22 +25,29 @@ def argparser():
 def main(args):
 
     "1.load config"
-    config = LoadConfig(args.config)
+    global_config, trainer_config, model_config, data_config = LoadConfig(args.config)
 
     "2.set seed"
-    SetSeed(config['seed'])
+    SetSeed(global_config['seed'])
 
     "3.set device"
-    config = SetDevice(config)
+    global_config = SetDevice(global_config)
 
     "4.load dataset"
-    loader = Loader(config)
+    loader = Loader(global_config, data_config)
     loader.load_dataset()
 
-    "5.build model"
-    model = LoadModel(config, loader)
+    "5.build and train model"
 
-    "5.train model"
-    trainer = Trainer(config, model, loader)
-    trainer.train()
+    if global_config['train_mod'] == 'one_split':
+        "5.1 build model"
+        model = LoadModel(model_config, loader)
+
+        "5.2 train model"
+        trainer = Trainer(trainer_config, model, loader)
+        trainer.train()
+
+    elif global_config['train_mod'] == 'cross_validation':
+        trainer = CrossTrainer(trainer_config, model_config, global_config, loader)
+        trainer.train()
 

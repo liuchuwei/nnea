@@ -43,36 +43,45 @@ def LoadConfig(path):
 
     config = toml.load(path)
 
+    # split config
+    global_config = config['global']
+    train_config = config['trainer']
+    data_config = config['dataload']
+
+
     # extract config
-    if config['gobal']['model'] == "LR":
-        config = {**config["LR"], **config["gobal"], **config["dataload"], **config["trainer"]}
+    if global_config['model'] == "LR":
+        model_config = config["LR"]
+    elif global_config['model'] == "nnea":
+        model_config = flatten_dict(config["nnea"])
 
     "flatten config dictionary"
-    config = flatten_dict(config)
-    config['toml_path'] = path
+    # config = flatten_dict(config)
+    global_config['toml_path'] = path
 
     "generate storage path"
     formatted_date = time.strftime("%Y_%m_%d_%H_%M", time.localtime())
-    checkpoint_dir = "checkpoints/" + formatted_date + "_" + config['dataset'] + "_" + config['model']
-    config['checkpoint_dir'] = checkpoint_dir
+    checkpoint_dir = "checkpoints/" + formatted_date + "_" + data_config['dataset'] + "_" + global_config['model']
+    model_config['checkpoint_dir'] = checkpoint_dir
 
     "define task"
-    if config['task'] in ["cell_drug", "cell_dependency", "regression"]:
-        config['task'] = "regression"
-    elif config['task'] in ["tumor_immunotherapy", "cell_class", "tumor_drug", "sc_classification", "sc_annotation", "classification"] :
-        config['task'] = "classification"
-    elif config['task'] in ["tumor_sur", "cox"]:
-        config['task'] = "cox"
-    elif config['task'] in ["sc_dimension_reduction", "autoencoder"]:
-        config['task'] = "autoencoder"
-    elif config['task'] == "sc_umap":
-        config['task'] = "umap"
+    if global_config['task'] in ["cell_drug", "cell_dependency", "regression"]:
+        global_config['task'] = "regression"
+    elif global_config['task'] in ["tumor_immunotherapy", "cell_class", "tumor_drug", "sc_classification", "sc_annotation", "classification"] :
+        global_config['task'] = "classification"
+    elif global_config['task'] in ["tumor_sur", "cox"]:
+        global_config['task'] = "cox"
+    elif global_config['task'] in ["sc_dimension_reduction", "autoencoder"]:
+        global_config['task'] = "autoencoder"
+    elif global_config['task'] == "sc_umap":
+        global_config['task'] = "umap"
 
-    return config
+    return global_config, train_config, model_config, data_config
 class Loader(object):
 
-    def __init__(self, config=None):
+    def __init__(self, global_config = None, config=None):
 
+        self.global_config = global_config
         self.config = config
 
     def expToRank(self, mat):
@@ -136,10 +145,10 @@ class Loader(object):
             phe = hf['phe'][:]
             self.sample_ids = [x.decode('utf-8') for x in hf['sample_id'][:]]
 
-        if self.config['model'] in ['nnea']:
-            self.load_torch_dataset( rank_exp, sort_exp, norm_exp, phe, pca)
+        if self.global_config['model'] in ['nnea']:
+            self.load_torch_dataset(rank_exp, sort_exp, norm_exp, phe, pca)
 
-        elif self.config['model'] in ['LR']:
+        elif self.global_config['model'] in ['LR']:
 
             X = norm_exp
             if self.config['scaler'] == "mean_sd":
@@ -184,7 +193,7 @@ class Loader(object):
         rank_exp_tensor = torch.tensor(rank_exp, dtype=torch.float32)
         sort_exp_tensor = torch.tensor(sort_exp, dtype=torch.long)
 
-        if self.config['task'] == "cox":
+        if self.global_config['task'] == "cox":
 
             "generate torch dataset"
             # 索引需用long类型
@@ -195,19 +204,19 @@ class Loader(object):
             targets = phe[:, 0]
 
 
-        elif self.config['task'] in ['classification', "regression"]:
+        elif self.global_config['task'] in ['classification', "regression"]:
 
             y_tensor = torch.tensor(phe, dtype=torch.float32)
             base_dataset = (rank_exp_tensor, sort_exp_tensor, y_tensor)
             targets = phe.flatten()  # 目标变量作为分层依据
 
-        elif self.config['task'] in ['autoencoder']:
+        elif self.global_config['task'] in ['autoencoder']:
 
             norm_exp_tensor = torch.tensor(norm_exp, dtype=torch.float32)
             base_dataset = (rank_exp_tensor, sort_exp_tensor, norm_exp_tensor)
             targets = None
 
-        elif self.config['task'] in ['umap']:
+        elif self.global_config['task'] in ['umap']:
 
             pca_tensor = torch.tensor(pca[:,:self.config['pca_dim']], dtype=torch.float32)
             y_tensor = torch.tensor(phe, dtype=torch.float32)
@@ -215,6 +224,7 @@ class Loader(object):
             targets = phe.flatten()
 
         self.cv_loaders = []
+        self.targets = targets
         self.split_dataset(base_dataset, targets)
 
     def split_dataset(self, base_dataset, targets):
@@ -222,13 +232,13 @@ class Loader(object):
         n_samples = base_dataset[0].shape[0]
         indices = np.arange(n_samples)
 
-        stratify = targets if self.config['task'] == 'classification' else None
+        stratify = targets if self.global_config['task'] == 'classification' else None
 
         train_idx, test_idx = train_test_split(
             indices,
             test_size=self.config['test_size'],
             stratify=stratify,  # 添加分层抽样
-            random_state=self.config['seed']
+            random_state=self.global_config['seed']
         )
 
         # 创建训练集和测试集的TensorDataset
@@ -240,12 +250,12 @@ class Loader(object):
         )
 
         # 创建测试集loader（不洗牌）
-        self.test_loader = torch.utils.data.DataLoader(
-            test_dataset,
-            batch_size=self.config['batch_size'],
-            shuffle=False
-        )
-
+        # self.test_loader = torch.utils.data.DataLoader(
+        #     test_dataset,
+        #     batch_size=self.config['batch_size'],
+        #     shuffle=False
+        # )
+        self.test_dataset = test_dataset
         # 保存测试集索引
         self.test_indices = test_idx
 
@@ -262,14 +272,14 @@ class Loader(object):
             cv = StratifiedKFold(
                 n_splits=self.config['n_splits'],
                 shuffle=self.config['shuffle'],
-                random_state=self.config['seed']
+                random_state=self.global_config['seed']
             )
             splits = cv.split(indices, targets)
         elif self.config['strategy'] == "KFold":
             cv = KFold(
                 n_splits=self.config['n_splits'],
                 shuffle=self.config['shuffle'],
-                random_state=self.config['seed']
+                random_state=self.global_config['seed']
             )
             splits = cv.split(indices)
 
@@ -286,21 +296,21 @@ class Loader(object):
             )
 
             # 创建数据加载器
-            train_loader = torch.utils.data.DataLoader(
-                train_dataset,
-                batch_size=self.config['batch_size'],
-                shuffle=True
-            )
-            valid_loader = torch.utils.data.DataLoader(
-                valid_dataset,
-                batch_size=self.config['batch_size'],
-                shuffle=False
-            )
+            # train_loader = torch.utils.data.DataLoader(
+            #     train_dataset,
+            #     batch_size=self.config['batch_size'],
+            #     shuffle=True
+            # )
+            # valid_loader = torch.utils.data.DataLoader(
+            #     valid_dataset,
+            #     batch_size=self.config['batch_size'],
+            #     shuffle=False
+            # )
 
             self.cv_loaders.append({
                 'fold': fold,
-                'train': train_loader,
-                'valid': valid_loader,
+                'train': train_dataset,
+                'valid': valid_dataset,
                 'train_indices': train_idx,
                 'valid_indices': valid_idx
             })
