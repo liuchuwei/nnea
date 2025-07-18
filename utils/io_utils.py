@@ -163,7 +163,7 @@ class Loader(object):
             y = phe.flatten()
 
             X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=self.config['test_size'], random_state=self.config['seed']
+                X, y, test_size=self.config['test_size'], random_state=self.global_config['seed']
             )
 
             if self.config['scaler'] == "mean_sd":
@@ -277,7 +277,7 @@ class Loader(object):
                 *[tensor[train_idx] for tensor in base_dataset]
             )
             self.val_dataset = torch.utils.data.TensorDataset(
-                *[tensor[train_idx] for tensor in base_dataset]
+                *[tensor[val_idx] for tensor in base_dataset]
             )
 
     def split_cross_validation(self, base_dataset, targets=None):

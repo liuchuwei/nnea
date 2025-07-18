@@ -171,7 +171,7 @@ class Trainer(object):
             )
 
 
-    def evaluate(self, loader):
+    def evaluate(self, loader=None):
 
         self.model.eval()
         total_samples = 0
@@ -354,7 +354,7 @@ class Trainer(object):
 
             total_loss += total_batch_loss.item()
 
-        avg_loss = total_loss / len(self.loader)
+        avg_loss = total_loss / len(loader)
 
         return avg_loss, task_loss, reg_loss
 
@@ -390,7 +390,7 @@ class Trainer(object):
 
             total_loss += total_batch_loss.item()
 
-        avg_loss = total_loss / len(self.loader)
+        avg_loss = total_loss / len(self.train_loader)
 
         return avg_loss, task_loss, reg_loss
 
@@ -606,9 +606,6 @@ class Trainer(object):
                 self.model.fit(self.loader.X_train, self.loader.y_train)
                 test_metrics, test_pred = self.evaluate_model(self.model, self.loader.X_test, self.loader.y_test)
                 print(classification_report(self.loader.y_test, test_pred))
-
-
-
 
 class UMAP_Loss(nn.Module):
     def __init__(self, n_neighbors=15, min_dist=0.1):
