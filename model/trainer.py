@@ -255,7 +255,7 @@ class Trainer(object):
 
         # 根据任务类型返回关键指标
         if self.config['task'] == "classification":
-            return self.macro_f1
+            return self.accuracy
         elif self.config['task'] == "cox":
             return self.accuracy
         elif self.config['task'] == "regression":
