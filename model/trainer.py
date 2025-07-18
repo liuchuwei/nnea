@@ -546,9 +546,9 @@ class Trainer(object):
 
 
             # 早停条件：训练损失或验证指标连续恶化
-            if (self.patience_counter_metric >= self.config['patience_metric'] and
-                    self.patience_counter_loss >= self.config['patience_loss']):
-            # if (self.patience_counter_loss >= self.config['patience_loss']):
+            # if (self.patience_counter_metric >= self.config['patience_metric'] and
+            #         self.patience_counter_loss >= self.config['patience_loss']):
+            if (self.patience_counter_loss >= self.config['patience_loss']):
                 print(f"Early stopping at epoch {epoch}")
                 break
 
