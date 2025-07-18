@@ -3,12 +3,12 @@
     device = "cuda"
     task = "tumor_immunotherapy" # tumor_sur, cell_class, tumor_drug, tumor_immunotherapy
     model = "nnea" # nnea, LR
-    train_mod = "cross_validation" # one_split
+    train_mod = "one_split"  # "cross_validation"
     n_iter = 5000
 
 [trainer]
     num_epochs = 10000
-    batch_size = [48, 64, 96, 128]
+    batch_size = 64 # [48, 64, 96, 128]
     patience_metric = 1
     patience_loss = 10
     verbose = 0
@@ -44,7 +44,7 @@
         geneset_layer_mode = "one_mode" # one_mode; deep_mod
         use_piror_knowldege = false
         geneset_layer_alpha = 0.25
-        num_sets = [5, 30, 1]  # 5~30, step = 1
+        num_sets = 20  # 5~30, step = 1 [5, 30, 1]
         set_min_size = 3
         set_max_size = 20
         num_fc_layers = 0
@@ -57,13 +57,13 @@
         classifier_name = 'linear' # linear or attention
         hidden_dims = [128, 64, 32]
         output_dim = 2
-        classifier_dropout = [[0.4, 0.3], [0.3, 0.3], [0.3, 0.25], [0.25, 0.25], [0.25, 0.2], [0.2, 0.2]]
+        classifier_dropout = [0.4, 0.3] # [[0.4, 0.3], [0.3, 0.3], [0.3, 0.25], [0.25, 0.25], [0.25, 0.2], [0.2, 0.2]]
         class_names = [0, 1]
 
     [nnea.optimizer]
-        lr = [0.00025, 0.00075, 0.001, 0.0025, 0.005, 0.0075, 0.01]
+        lr = 0.001# 0.00025, 0.00075, 0.001, 0.0025, 0.005, 0.0075, 0.01
         opt = "adam"
         opt_scheduler = "reduce"
         opt_factor = 0.5
         opt_patience = 5
-        weight_decay = [1e-4, 0.25e-4, 0.75e-4, 1e-5, 0.75e-5, 0.25e-5, 1e-6]
+        weight_decay = 1e-5 # 1e-4, 0.25e-4, 0.75e-4, 1e-5, 0.75e-5, 0.25e-5, 1e-6

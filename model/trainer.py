@@ -15,6 +15,43 @@ from sklearn.metrics import (
     mean_squared_error, mean_absolute_error, r2_score, silhouette_score
 )
 
+
+class OneSplitTrainer(object):
+
+    def __init__(self, trainer_config, model_config, global_config, loader):
+        self.model_config = {**global_config, **model_config, **trainer_config}
+        self.loader = loader
+        self.train_loader = {"train": loader.train_dataset, "valid":loader.val_dataset}
+
+    def train(self):
+
+        params = {
+            "lr" : self.model_config['lr'],
+            "weight_decay" : self.model_config['weight_decay'],
+            "classifier_dropout": self.model_config['classifier_dropout'],
+            "num_sets": self.model_config['num_sets'],
+            "batch_size" : self.model_config['batch_size'],
+        }
+
+
+        print(f"\nEvaluating hyperparameters: {params}")
+
+        final_model = LoadModel(self.model_config, self.loader)
+        final_trainer = Trainer(self.model_config, final_model, self.train_loader)
+        final_trainer.train()
+        test_loader = torch.utils.data.DataLoader(
+            self.loader.test_dataset,
+            batch_size=self.model_config['batch_size'],
+            shuffle=False
+        )
+        final_trainer.evaluate(loader=test_loader)
+
+        print(classification_report(final_trainer.all_targets, final_trainer.all_predictions))
+
+        with open(os.path.join(self.model_config['checkpoint_dir'], "test_result.txt"), 'w') as f:
+            f.write(classification_report(final_trainer.all_targets, final_trainer.all_predictions))
+
+
 class CrossTrainer(object):
 
     def __init__(self, trainer_config, model_config, global_config, loader):
@@ -509,9 +546,9 @@ class Trainer(object):
 
 
             # 早停条件：训练损失或验证指标连续恶化
-            # if (self.patience_counter_metric >= self.config['patience_metric'] and
-            #         self.patience_counter_loss >= self.config['patience_loss']):
-            if (self.patience_counter_loss >= self.config['patience_loss']):
+            if (self.patience_counter_metric >= self.config['patience_metric'] and
+                    self.patience_counter_loss >= self.config['patience_loss']):
+            # if (self.patience_counter_loss >= self.config['patience_loss']):
                 print(f"Early stopping at epoch {epoch}")
                 break
 
@@ -616,7 +653,7 @@ class UMAP_Loss(nn.Module):
 
         # 6. 低维空间相似度
         low_dim_dist = torch.cdist(embeddings, embeddings)
-        q_ij = 1.0 / (1 + self.a * low_dim_dist ** (2 * self.b))  # UMAP曲线拟合[1,6](@ref)
+        q_ij = 1.0 / (1 + self.a  * low_dim_dist ** (2 * self.b))  # UMAP曲线拟合[1,6](@ref)
 
         # 7. 交叉熵损失（原始UMAP设计）[1,4,6](@ref)
         loss_pos = p_ij * torch.log(q_ij + 1e-7)

@@ -260,7 +260,25 @@ class Loader(object):
         self.test_indices = test_idx
 
         # 生成交叉验证划分
-        self.split_cross_validation(train_dataset, targets[train_idx])
+        if self.global_config['train_mod'] == "cross_validation":
+            self.split_cross_validation(train_dataset, targets[train_idx])
+
+        elif self.global_config['train_mod'] == "one_split":
+
+            stratify = targets[train_idx] if self.global_config['task'] == 'classification' else None
+
+            train_idx, val_idx = train_test_split(
+                train_idx,
+                test_size=self.config['val_size'],
+                stratify=stratify,  # 添加分层抽样
+                random_state=self.global_config['seed']
+            )
+            self.train_dataset = torch.utils.data.TensorDataset(
+                *[tensor[train_idx] for tensor in base_dataset]
+            )
+            self.val_dataset = torch.utils.data.TensorDataset(
+                *[tensor[train_idx] for tensor in base_dataset]
+            )
 
     def split_cross_validation(self, base_dataset, targets=None):
         """生成交叉验证数据划分"""

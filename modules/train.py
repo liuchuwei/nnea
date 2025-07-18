@@ -4,7 +4,7 @@ import argparse
 from argparse import ArgumentDefaultsHelpFormatter
 import torch
 
-from model.trainer import Trainer, CrossTrainer
+from model.trainer import Trainer, CrossTrainer, OneSplitTrainer
 from utils.train_utils import SetSeed, LoadModel, SetDevice
 from utils.io_utils import Loader, LoadConfig
 
@@ -40,11 +40,8 @@ def main(args):
     "5.build and train model"
 
     if global_config['train_mod'] == 'one_split':
-        "5.1 build model"
-        model = LoadModel(model_config, loader)
 
-        "5.2 train model"
-        trainer = Trainer(trainer_config, model, loader)
+        trainer = OneSplitTrainer(trainer_config, model_config, global_config, loader)
         trainer.train()
 
     elif global_config['train_mod'] == 'cross_validation':
