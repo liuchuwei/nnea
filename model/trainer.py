@@ -166,14 +166,6 @@ class ML_Trainer(object):
 
     def save_checkpoint(self):
 
-        checkpoint_dir = self.config['checkpoint_dir']
-        if not os.path.exists(checkpoint_dir):  # 先检查是否存在
-                os.makedirs(checkpoint_dir)
-                source_file = self.config['toml_path']
-                dest_path = os.path.join(checkpoint_dir, os.path.basename(source_file))
-                shutil.copy2(source_file, dest_path)  # 复制文件并保留元数据[6,8](@ref)
-
-
         test_metrics, test_pred = self.evaluate_model(self.model, self.loader.X_test, self.loader.y_test)
         print("best params: %s" % self.model.get_params)
         print("best metrics: %s" % test_metrics)
@@ -190,7 +182,7 @@ class ML_Trainer(object):
             'true_label': self.loader.y_test,
             'predicted_label': test_pred
         })
-        results_df.to_csv(os.path.join(self.config['checkpoint_dir'], "'predictions.csv"), index=False)
+        results_df.to_csv(os.path.join(self.config['checkpoint_dir'], "predictions.csv"), index=False)
 
     def train(self):
 
@@ -461,10 +453,10 @@ class Trainer(object):
             logits = self.model(batch_R, batch_S)
 
             # 计算分类损失
-            task_loss = self.get_task_loss(logits, batch_data, device=self.config['device'])
+            task_loss = self.get_task_loss(logits, batch_data, device=self.config['device'])*self.config['task_loss_weight']
 
             # 计算正则化损失
-            reg_loss = self.model.regularization_loss()
+            reg_loss = self.model.regularization_loss()*self.config['reg_loss_weitht']
 
             # 总损失（分类损失+正则化损失）
             total_batch_loss = task_loss + reg_loss

@@ -141,9 +141,12 @@ class TrainableGeneSetLayer(nn.Module):
         entropy_loss = (-indicators * safe_log).mean()
 
         # 约束4: 基因集多样性（防止重叠）
-        normalized_indicators = indicators / (indicators.norm(dim=1, keepdim=True) + 1e-8)
-        overlap_matrix = torch.mm(normalized_indicators, normalized_indicators.t())
-        diversity_loss = torch.triu(overlap_matrix, diagonal=1).sum() / (self.num_sets * (self.num_sets - 1) // 2)
+        if indicators.size()[0]>1:
+            normalized_indicators = indicators / (indicators.norm(dim=1, keepdim=True) + 1e-8)
+            overlap_matrix = torch.mm(normalized_indicators, normalized_indicators.t())
+            diversity_loss = torch.triu(overlap_matrix, diagonal=1).sum() / (self.num_sets * (self.num_sets - 1) // 2)
+        else:
+            diversity_loss = 0
 
         if self.is_deep_layer:
             exponent = torch.tensor(-self.layer_index * 0.5, device=size_min_loss.device)

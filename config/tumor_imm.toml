@@ -2,18 +2,20 @@
     seed = 888888888
     device = "cuda"
     task = "tumor_immunotherapy" # tumor_sur, cell_class, tumor_drug, tumor_immunotherapy
-    model = "NN" # nnea, LR, DT
-    train_mod = "cross_validation"  # "one_split, cross_validation"
+    model = "nnea" # nnea, LR, DT, RF, AB, LinearSVM, RBFSVM, NN
+    train_mod = "one_split"  # "one_split, cross_validation"
     n_iter = 500 # iter of random search
 
 [trainer]
     num_epochs = 10000
-    batch_size = 64 # [48, 64, 96, 128]
+    batch_size = 128 # [48, 64, 96, 128]
     patience_metric = 1
-    patience_loss = 10
+    patience_loss = 3
     verbose = 0
-    n_jobs = 1
+    n_jobs = 10
     scoring = 'roc_auc' # neg_mean_squared_error
+    task_loss_weight = 1
+    reg_loss_weitht = 1
 
 [dataload]
     dataset = 'imm_response'
@@ -45,6 +47,7 @@
     n_estimators = [50, 100, 200]  # 树的数量
     max_depth = [5, 10, 20]
     min_samples_split = [2, 5]
+    min_samples_leaf = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     max_features = ["sqrt", "log2"]
     class_weight = ["balanced"]
 
@@ -91,22 +94,21 @@
         freeze_prior = false
 
     [nnea.geneset_layer]
-        geneset_layer_mode = "one_mode" # one_mode; deep_mod
+        geneset_layer_mode = "deep_mode" # one_mode; deep_mode
         use_piror_knowldege = false
         geneset_layer_alpha = 0.25
-        num_sets = 20  # 5~30, step = 1 [5, 30, 1]
+        num_sets = 5  # 5~30, step = 1 [5, 30, 1]
         set_min_size = 3
         set_max_size = 20
         num_fc_layers = 0
         geneset_dropout = 0.30
 
     [nnea.deep_mod]
-        geneset_layers = 2
-        sub_num_genesets = 10
+        geneset_layers = 6
 
     [nnea.classifier]
-        classifier_name = 'linear' # linear or attention
-        hidden_dims = [128, 64, 32]
+        classifier_name = 'attention' # linear or attention
+        hidden_dims = [] # [128, 64, 32]
         output_dim = 2
         classifier_dropout = [0.4, 0.3] # [[0.4, 0.3], [0.3, 0.3], [0.3, 0.25], [0.25, 0.25], [0.25, 0.2], [0.2, 0.2]]
         class_names = [0, 1]

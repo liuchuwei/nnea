@@ -11,6 +11,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from torch import optim, nn
+import torch.nn.functional as F
 
 from model.nnea_layers import TrainableGeneSetLayer
 
@@ -214,18 +215,7 @@ def BuildDeepGenesetLayer(config, prior_tensor = None):
                 freeze_prior=config['freeze_prior']
             )
         else:
-            layer = TrainableGeneSetLayer(
-                num_genes=config['num_genes'],
-                num_sets=prior_tensor.shape[0],
-                min_set_size=config['set_min_size'],
-                max_set_size=config['set_max_size'],
-                alpha=config['alpha'],
-                is_deep_layer=True,
-                layer_index=i,
-                prior_knowledge=None,
-                freeze_prior=config['freeze_prior'],
-                num_fc_layers=config['num_fc_layers'],
-            )
+            layer = BuildGenesetLayer(config, prior_tensor)
         gene_set_layers.append(layer)
     
     return gene_set_layers
@@ -254,8 +244,37 @@ def BuildGenesetLayer(config, prior_tensor = None):
         
 
     return gene_set_layer
-    
 
+
+class AttentionBlock(nn.Module):
+    """自注意力模块，用于动态加权特征"""
+
+    def __init__(self, input_dim):
+        super().__init__()
+        self.query = nn.Linear(input_dim, input_dim)  # 压缩通道降低计算量
+        self.key = nn.Linear(input_dim, input_dim)
+        self.value = nn.Linear(input_dim, input_dim)
+        self.gamma = nn.Parameter(torch.zeros(1))  # 可学习的残差权重
+
+    def forward(self, x):
+        # x shape: [Batch, Sequence, Features] → 需调整为特征维度
+        if x.dim() == 2:  # 若输入为2D（无序列长度），增加序列维度
+            x = x.unsqueeze(1)  # [B, 1, D]
+
+        Q = self.query(x)  # [B, Seq, D//8]
+        K = self.key(x)  # [B, Seq, D//8]
+        V = self.value(x)  # [B, Seq, D]
+
+        # 计算注意力分数
+        scores = torch.bmm(Q, K.transpose(1, 2))  # [B, Seq, Seq]
+        attn_weights = F.softmax(scores, dim=-1)  # 归一化权重
+
+        # 加权聚合特征
+        context = torch.bmm(attn_weights, V)  # [B, Seq, D]
+
+        # 残差连接 + 特征压缩回原始维度
+        output = self.gamma * context + x
+        return output.squeeze(1)  # 移除序列维度 → [B, D]
 def BuildClassifier(config, input_dim):
 
     if config['classifier_name'] == "linear":
@@ -264,17 +283,41 @@ def BuildClassifier(config, input_dim):
         current_dim = input_dim
         hidden_dims = config['hidden_dims']
 
-        for i, h_dim in enumerate(hidden_dims):
-            layers.append(nn.Linear(current_dim, h_dim))
+        if len(hidden_dims)>0:
+            for i, h_dim in enumerate(hidden_dims):
+                layers.append(nn.Linear(current_dim, h_dim))
+                layers.append(nn.ReLU())
+                if i != len(hidden_dims) - 1:
+                    layers.append(nn.BatchNorm1d(h_dim))
+                    layers.append(nn.Dropout(config['classifier_dropout'][i]))
+                current_dim = h_dim
+        else:
+            # 输出层
             layers.append(nn.ReLU())
-            if i != len(hidden_dims) - 1:
-                layers.append(nn.BatchNorm1d(h_dim))
-                layers.append(nn.Dropout(config['classifier_dropout'][i]))
-            current_dim = h_dim
-
-        # 输出层
         layers.append(nn.Linear(current_dim, config['output_dim']))
 
+        classifier = nn.Sequential(*layers)
+
+    elif config['classifier_name'] == "attention":
+        layers = []
+        current_dim = input_dim
+
+        # 1. 添加自注意力层
+        layers.append(AttentionBlock(current_dim))
+
+        # 2. 添加MLP层（与linear分类器结构一致）
+        hidden_dims = config['hidden_dims']
+        if len(hidden_dims) > 0:
+            for i, h_dim in enumerate(hidden_dims):
+                layers.append(nn.Linear(current_dim, h_dim))
+                layers.append(nn.ReLU())
+                if i != len(hidden_dims) - 1:
+                    layers.append(nn.BatchNorm1d(h_dim))
+                    layers.append(nn.Dropout(config['classifier_dropout'][i]))
+                current_dim = h_dim
+
+        # 3. 输出层
+        layers.append(nn.Linear(current_dim, config['output_dim']))
         classifier = nn.Sequential(*layers)
 
     return classifier
@@ -325,7 +368,7 @@ def BuildOptimizer(params, config=None):
                                       amsgrad=config['amsgrad'])
     elif config['opt'] == 'sgd':
         optimizer = optim.SGD(filter_fn, lr=config['lr'],
-                              momentum=config['momentum'],
+                              # momentum=config['momentum'],
                               weight_decay=config['weight_decay'])
     elif config['opt'] == 'rmsprop':
         optimizer = optim.RMSprop(filter_fn, lr=config['lr'],

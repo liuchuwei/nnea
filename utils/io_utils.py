@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import h5py
 import numpy as np
@@ -75,6 +76,12 @@ def LoadConfig(path):
     formatted_date = time.strftime("%Y_%m_%d_%H_%M", time.localtime())
     checkpoint_dir = "checkpoints/" + formatted_date + "_" + data_config['dataset'] + "_" + global_config['model']
     model_config['checkpoint_dir'] = checkpoint_dir
+
+    if not os.path.exists(checkpoint_dir):  # 先检查是否存在
+        os.makedirs(checkpoint_dir)
+        source_file = path
+        dest_path = os.path.join(checkpoint_dir, os.path.basename(source_file))
+        shutil.copy2(source_file, dest_path)  # 复制文件并保留元数据[6,8](@ref)
 
     "define task"
     if global_config['task'] in ["cell_drug", "cell_dependency", "regression"]:

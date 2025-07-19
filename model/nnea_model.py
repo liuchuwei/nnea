@@ -50,7 +50,7 @@ class nnea(nn.Module):
 
         if self.config['geneset_layer_mode'] == 'deep_mode':
             # 在深度模式下使用所有层的特征拼接
-            input_dim = self.config['geneset_layers'] * self.config['sub_num_genesets']
+            input_dim = self.config['geneset_layers'] * self.config['num_sets']
         elif self.config['geneset_layer_mode'] == 'one_mode':
             input_dim = self.config['num_sets']
 
