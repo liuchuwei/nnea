@@ -7,14 +7,14 @@
     n_iter = 500 # iter of random search
 
 [trainer]
-    num_epochs = 10000
+    num_epochs = 2
     batch_size = 128 # [48, 64, 96, 128]
     patience_metric = 1
     patience_loss = 10
     verbose = 0
     n_jobs = 10
     scoring = 'roc_auc' # neg_mean_squared_error
-    task_loss_weight = 1
+    task_loss_weight = 10
     reg_loss_weitht = 1
 
 [dataload]

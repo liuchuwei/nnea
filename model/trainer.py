@@ -39,7 +39,8 @@ class OneSplitTrainer(object):
         final_model = LoadModel(self.model_config, self.loader)
         final_trainer = Trainer(self.model_config, final_model, self.train_loader)
         final_trainer.train()
-        final_trainer.model.load_state_dict(os.path.join(self.config['checkpoint_dir'], "_checkpoint.pt"))
+        checkpoint = torch.load(final_trainer.checkpoint_path)
+        final_trainer.model.load_state_dict(checkpoint)
         test_loader = torch.utils.data.DataLoader(
             self.loader.test_dataset,
             batch_size=self.model_config['batch_size'],
@@ -122,7 +123,8 @@ class CrossTrainer(object):
         final_model = LoadModel(self.model_config, self.loader)
         final_trainer = Trainer(self.model_config, final_model, self.loader.cv_loaders[best_fold])
         final_trainer.train()
-        final_trainer.model.load_state_dict(os.path.join(self.model_config['checkpoint_dir'], "_checkpoint.pt"))
+        checkpoint = torch.load(final_trainer.checkpoint_path)
+        final_trainer.model.load_state_dict(checkpoint)
         test_loader = torch.utils.data.DataLoader(
             self.loader.test_dataset,
             batch_size=self.model_config['batch_size'],
@@ -371,16 +373,16 @@ class Trainer(object):
     def get_validation_metric(self):
         """获取验证集性能指标"""
 
-        # 根据任务类型返回关键指标
-        if self.config['task'] == "classification":
-            return self.accuracy
-        elif self.config['task'] == "cox":
-            return self.accuracy
-        elif self.config['task'] == "regression":
-            return -self.mse  # 负MSE（越大越好）
-        elif self.config['task'] == "umap":
-            return self.silhouette_loss
-
+        # # 根据任务类型返回关键指标
+        # if self.config['task'] == "classification":
+        #     return self.accuracy
+        # elif self.config['task'] == "cox":
+        #     return self.accuracy
+        # elif self.config['task'] == "regression":
+        #     return -self.mse  # 负MSE（越大越好）
+        # elif self.config['task'] == "umap":
+        #     return self.silhouette_loss
+        return self.best_metric
     def get_task_loss(self, logits, batch_data, device):
 
         if self.config['task'] in ['classification']:
@@ -475,9 +477,10 @@ class Trainer(object):
 
         return avg_loss, task_loss, reg_loss
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, epoch):
 
         checkpoint_dir = self.config['checkpoint_dir']
+        self.checkpoint_path = os.path.join(self.config['checkpoint_dir'], "%s_checkpoint.pt" % epoch)
         if not os.path.exists(checkpoint_dir):  # 先检查是否存在
                 os.makedirs(checkpoint_dir)
                 source_file = self.config['toml_path']
@@ -485,7 +488,7 @@ class Trainer(object):
                 shutil.copy2(source_file, dest_path)  # 复制文件并保留元数据[6,8](@ref)
 
         if self.config['model'] in ['nnea']:
-            torch.save(self.model.state_dict(), os.path.join(self.config['checkpoint_dir'], "_checkpoint.pt"))
+            torch.save(self.model.state_dict(), self.checkpoint_path)
 
         elif self.config['model'] in ['LR']:
             test_metrics, test_pred = self.evaluate_model(self.model, self.loader.X_test, self.loader.y_test)
@@ -524,7 +527,7 @@ class Trainer(object):
 
         if improved:
             self.best_metric = current_metric
-            self.save_checkpoint()
+            self.save_checkpoint(epoch)
 
         return improved
     def print_process(self, epoch, task_loss, reg_loss, avg_loss):
