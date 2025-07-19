@@ -39,11 +39,13 @@ class OneSplitTrainer(object):
         final_model = LoadModel(self.model_config, self.loader)
         final_trainer = Trainer(self.model_config, final_model, self.train_loader)
         final_trainer.train()
+        final_trainer.model.load_state_dict(os.path.join(self.config['checkpoint_dir'], "_checkpoint.pt"))
         test_loader = torch.utils.data.DataLoader(
             self.loader.test_dataset,
             batch_size=self.model_config['batch_size'],
             shuffle=False
         )
+
         final_trainer.evaluate(loader=test_loader)
 
         print(classification_report(final_trainer.all_targets, final_trainer.all_predictions))
@@ -120,6 +122,7 @@ class CrossTrainer(object):
         final_model = LoadModel(self.model_config, self.loader)
         final_trainer = Trainer(self.model_config, final_model, self.loader.cv_loaders[best_fold])
         final_trainer.train()
+        final_trainer.model.load_state_dict(os.path.join(self.model_config['checkpoint_dir'], "_checkpoint.pt"))
         test_loader = torch.utils.data.DataLoader(
             self.loader.test_dataset,
             batch_size=self.model_config['batch_size'],
