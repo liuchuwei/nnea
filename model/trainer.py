@@ -515,7 +515,7 @@ class Trainer(object):
         if self.config['task'] == "cox":
             current_metric = self.accuracy
         elif self.config['task'] == "classification":
-            current_metric = self.macro_f1
+            current_metric = self.accuracy
         elif self.config['task'] == "regression":
             current_metric = -self.mse  # 负值方便统一逻辑（越大越好）
         elif self.config['task'] == "autoencoder":
@@ -610,7 +610,7 @@ class Trainer(object):
             self.print_process(epoch, task_loss, reg_loss, avg_loss)
 
             # 关键修改：同时监控训练损失和验证指标
-            improved_metric = self.save_model(epoch)  # 验证指标是否提升
+            improved_metric = self.save_model(epoch=(epoch + 1))  # 验证指标是否提升
 
             avg_loss, task_loss, reg_loss = self.calculate_loss(loader = self.valid_loader)
             improved_loss = avg_loss < self.best_avg_loss  # 训练损失是否降低
