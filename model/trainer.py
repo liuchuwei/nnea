@@ -88,11 +88,10 @@ class CrossTrainer(object):
         param_grid = {
             "lr" : self.model_config['lr'],
             "weight_decay" : self.model_config['weight_decay'],
-            "classifier_dropout": self.model_config['classifier_dropout'],
-            "num_sets": range(self.model_config['num_sets'][0],
-                              self.model_config['num_sets'][1],
-                              self.model_config['num_sets'][2]),
-            "batch_size" : self.model_config['batch_size'],
+            "geneset_dropout": self.model_config['classifier_dropout'],
+            "num_sets": self.model_config['num_sets'],
+            "geneset_layers": self.model_config['geneset_layers'],
+            "weight_decay": self.model_config['weight_decay'],
         }
 
         param_samples = list(ParameterSampler(param_grid, n_iter=self.model_config['n_iter']))
