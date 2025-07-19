@@ -108,7 +108,8 @@ class nnea(nn.Module):
                 new_mask = (max_indicators < 0.1).float()  # 指示值>0.1的基因设为0
                 if torch.sum(new_mask) == 0:  # 避免全零掩码
                     new_mask = torch.ones_like(new_mask)
-                gene_mask = gene_mask * new_mask  # 更新全局mask
+                # gene_mask = gene_mask * new_mask  # 更新全局mask
+                gene_mask = gene_mask * (1 - self.config['decay_factor'] * indicators.max(dim=0)[0])
 
             # 拼接所有层的富集分数
             es_scores = torch.cat(all_es_scores, dim=1)

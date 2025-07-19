@@ -105,6 +105,7 @@
 
     [nnea.deep_mod]
         geneset_layers = 6
+        decay_factor = 0.7
 
     [nnea.classifier]
         classifier_name = 'attention' # linear or attention
