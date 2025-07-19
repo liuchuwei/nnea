@@ -523,7 +523,7 @@ class Trainer(object):
         elif self.config['task'] == "umap":
             current_metric = -self.silhouette_loss
 
-        improved = current_metric > self.best_metric
+        improved = current_metric >= self.best_metric
 
         if improved:
             self.best_metric = current_metric
