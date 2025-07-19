@@ -242,9 +242,12 @@ class Trainer(object):
 
         self.scheduler, self.optimizer = BuildOptimizer(params=self.model.parameters(), config=self.config)
 
-        class_counts = np.bincount(self.loader['targets'].astype(int))
-        self.class_weights = tensor(len(self.loader['targets']) / (len(class_counts) * class_counts), dtype=torch.float).to(
-            self.config['device'])
+        labels = self.loader['train'].tensors[2].squeeze()  # 假设标签是TensorDataset的第二个张量
+        class_counts = torch.bincount(labels.long())
+        total_samples = labels.size(0)
+        num_classes = class_counts.size(0)
+        class_weights = total_samples / (num_classes * class_counts.float())
+        self.class_weights = class_weights.to(self.config['device'])
 
         if self.config['task'] == "umap":
             self.umap_loss = UMAP_Loss(

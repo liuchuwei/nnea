@@ -3,7 +3,7 @@
     device = "cuda"
     task = "tumor_immunotherapy" # tumor_sur, cell_class, tumor_drug, tumor_immunotherapy
     model = "nnea" # nnea, LR, DT, RF, AB, LinearSVM, RBFSVM, NN
-    train_mod = "one_split"  # "one_split, cross_validation"
+    train_mod = "cross_validation"  # "one_split, cross_validation"
     n_iter = 20 # iter of random search
 
 [trainer]
