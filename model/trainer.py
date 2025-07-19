@@ -119,6 +119,7 @@ class CrossTrainer(object):
 
         print(f"\n🚀 Training final model with best params: {self.best_params}")
         self.model_config.update(self.best_params)
+        self.model_config['train_mod'] = "one_split"
         final_model = LoadModel(self.model_config, self.loader)
         final_trainer = Trainer(self.model_config, final_model, self.loader.cv_loaders[best_fold])
         final_trainer.train()
@@ -529,7 +530,8 @@ class Trainer(object):
 
         if improved:
             self.best_metric = current_metric
-            self.save_checkpoint(epoch)
+            if self.config['train_mod'] == "one_split"
+                self.save_checkpoint(epoch)
 
         return improved
     def print_process(self, epoch, task_loss, reg_loss, avg_loss):
