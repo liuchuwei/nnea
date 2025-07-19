@@ -40,7 +40,7 @@ def main(args):
     "5.build and train model"
 
 
-    if global_config['model'] in ["LR"]:
+    if global_config['model'] in ["LR", "DT", "RF", "AB", "LinearSVM", "RBFSVM", "NN"]:
 
         trainer = ML_Trainer({**model_config, **global_config, **trainer_config}, loader)
         trainer.train()

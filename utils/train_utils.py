@@ -5,7 +5,11 @@ import torch
 from typing import *
 
 from scipy.stats import loguniform, uniform
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.neural_network import MLPClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 from torch import optim, nn
 
 from model.nnea_layers import TrainableGeneSetLayer
@@ -36,6 +40,121 @@ def LoadModel(config, loader):
             model = LogisticRegression(max_iter=config['max_iter'], random_state=config['seed'],
                                        penalty=config['penalty'],solver=config['solver'], C=config['hyper_C'],
                                        class_weight=config['class_weight'])
+
+    elif config['model'] == 'DT':
+        print("training decision tree model...")
+        if config['train_mod'] == "cross_validation":
+            model = {
+                "model": DecisionTreeClassifier(random_state=config['seed']),
+                "params": {
+                    "max_depth": config['max_depth'],
+                    "min_samples_split": config['min_samples_split'],
+                    "min_samples_leaf": config['min_samples_leaf'],
+                    "criterion": config['criterion'],
+                    "class_weight": config['class_weight']
+                }
+            }
+        elif config['train_mod'] == "one_split":
+            model = DecisionTreeClassifier(
+                random_state=config['seed'],
+                max_depth=config['max_depth'][0] if isinstance(config['max_depth'], list) else config['max_depth'],
+                min_samples_split=config['min_samples_split'],
+                min_samples_leaf=config['min_samples_leaf'],
+                criterion=config['criterion'],
+                class_weight=config['class_weight']
+            )
+
+    elif config['model'] == 'RF':
+        print("training random forest model...")
+        if config['train_mod'] == "cross_validation":
+            model = {
+                "model": RandomForestClassifier(random_state=config['seed']),
+                "params": {
+                    "n_estimators": config['n_estimators'],
+                    "max_depth": config['max_depth'],
+                    "min_samples_split": config['min_samples_split'],
+                    "max_features": config['max_features'],
+                    "class_weight": config['class_weight']
+                }
+            }
+        elif config['train_mod'] == "one_split":
+            model = RandomForestClassifier(
+                random_state=config['seed'],
+                n_estimators=config['n_estimators'],
+                max_depth=config['max_depth'],
+                min_samples_split=config['min_samples_split'],
+                max_features=config['max_features'],
+                class_weight=config['class_weight']
+            )
+    elif config['model'] == 'AB':
+        print("training adaptive boosting model...")
+        if config['train_mod'] == "cross_validation":
+            model = {
+                "model": AdaBoostClassifier(random_state=config['seed']),
+                "params": {
+                    "n_estimators": config['n_estimators'],
+                    "learning_rate": config['learning_rate'],
+                    "algorithm": config['algorithm']
+                }
+            }
+        elif config['train_mod'] == "one_split":
+            model = AdaBoostClassifier(
+                random_state=config['seed'],
+                n_estimators=config['n_estimators'],
+                learning_rate=config['learning_rate'],
+                algorithm=config['algorithm']
+            )
+
+    elif config['model'] in ['LinearSVM', 'RBFSVM']:
+        kernel_type = 'linear' if config['model'] == 'LinearSVM' else 'rbf'
+        print(f"training {kernel_type} SVM model...")
+
+        if config['train_mod'] == "cross_validation":
+            params = {
+                "C": loguniform(config['hyper_C_min'], config['hyper_C_max']),
+                "kernel": [kernel_type],
+                "class_weight": config['class_weight']
+            }
+            if kernel_type == 'rbf':
+                params["gamma"] = loguniform(config['gamma_min'], config['gamma_max'])
+
+            model = {
+                "model": SVC(max_iter=config['max_iter'], random_state=config['seed']),
+                "params": params
+            }
+        elif config['train_mod'] == "one_split":
+            params = {
+                "C": config['hyper_C'],
+                "kernel": kernel_type,
+                "class_weight": config['class_weight']
+            }
+            if kernel_type == 'rbf':
+                params["gamma"] = config['gamma']
+            model = SVC(max_iter=config['max_iter'], random_state=config['seed'], **params)
+
+    elif config['model'] == 'NN':
+        print("training neural network model...")
+        if config['train_mod'] == "cross_validation":
+            model = {
+                "model": MLPClassifier(random_state=config['seed'], max_iter=config['max_iter']),
+                "params": {
+                    "hidden_layer_sizes": config['hidden_layer_sizes'],
+                    "activation": config['activation'],
+                    "solver": config['solver'],
+                    "alpha": loguniform(config['alpha_min'], config['alpha_max']),
+                    "learning_rate": config['learning_rate']
+                }
+            }
+        elif config['train_mod'] == "one_split":
+            model = MLPClassifier(
+                random_state=config['seed'],
+                hidden_layer_sizes=config['hidden_layer_sizes'],
+                activation=config['activation'],
+                solver=config['solver'],
+                alpha=config['alpha'],
+                learning_rate=config['learning_rate'],
+                max_iter=config['max_iter']
+            )
 
     return model
 

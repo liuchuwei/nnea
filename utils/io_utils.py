@@ -52,6 +52,18 @@ def LoadConfig(path):
     # extract config
     if global_config['model'] == "LR":
         model_config = config["LR"]
+    elif global_config['model'] == "DT":
+        model_config = config["DT"]
+    elif global_config['model'] == "RF":
+        model_config = config["RF"]
+    elif global_config['model'] == "AB":
+        model_config = config["AB"]
+    elif global_config['model'] == "LinearSVM":
+        model_config = config["LinearSVM"]
+    elif global_config['model'] == "RBFSVM":
+        model_config = config["RBFSVM"]
+    elif global_config['model'] == "NN":
+        model_config = config["NN"]
     elif global_config['model'] == "nnea":
         model_config = flatten_dict(config["nnea"])
 
@@ -148,7 +160,7 @@ class Loader(object):
         if self.global_config['model'] in ['nnea']:
             self.load_torch_dataset(rank_exp, sort_exp, norm_exp, phe, pca)
 
-        elif self.global_config['model'] in ['LR']:
+        elif self.global_config['model'] in ["LR", "DT", "RF", "AB", "LinearSVM", "RBFSVM", "NN"]:
 
             X = norm_exp
             if self.config['scaler'] == "mean_sd":
