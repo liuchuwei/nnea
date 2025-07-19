@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from typing import *
 
-from scipy.stats import loguniform
+from scipy.stats import loguniform, uniform
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from torch import optim, nn
 
@@ -27,12 +27,15 @@ def LoadModel(config, loader):
                 "params": {
                     "C": loguniform(config['hyper_C_min'], config['hyper_C_max']),
                     "penalty": config['penalty'],
-                    "solver": config['solver']
+                    "solver": config['solver'],
+                    'l1_ratio': uniform(0, 1),  # l1_ratio ∈ [0, 1]
+                    "class_weight": config['class_weight']
                 }
             }
         elif config['train_mod'] == "one_split":
             model = LogisticRegression(max_iter=config['max_iter'], random_state=config['seed'],
-                                       penalty=config['penalty'],solver=config['solver'], C=config['hyper_C'])
+                                       penalty=config['penalty'],solver=config['solver'], C=config['hyper_C'],
+                                       class_weight=config['class_weight'])
 
     return model
 

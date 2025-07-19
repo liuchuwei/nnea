@@ -4,7 +4,7 @@ import argparse
 from argparse import ArgumentDefaultsHelpFormatter
 import torch
 
-from model.trainer import Trainer, CrossTrainer, OneSplitTrainer
+from model.trainer import Trainer, CrossTrainer, OneSplitTrainer, ML_Trainer
 from utils.train_utils import SetSeed, LoadModel, SetDevice
 from utils.io_utils import Loader, LoadConfig
 
@@ -39,12 +39,19 @@ def main(args):
 
     "5.build and train model"
 
-    if global_config['train_mod'] == 'one_split':
 
-        trainer = OneSplitTrainer(trainer_config, model_config, global_config, loader)
+    if global_config['model'] in ["LR"]:
+
+        trainer = ML_Trainer({**model_config, **global_config, **trainer_config}, loader)
         trainer.train()
 
-    elif global_config['train_mod'] == 'cross_validation':
-        trainer = CrossTrainer(trainer_config, model_config, global_config, loader)
-        trainer.train()
+    elif global_config['model'] in ['nnea']:
+        if global_config['train_mod'] == 'one_split':
+
+            trainer = OneSplitTrainer(trainer_config, model_config, global_config, loader)
+            trainer.train()
+
+        elif global_config['train_mod'] == 'cross_validation':
+            trainer = CrossTrainer(trainer_config, model_config, global_config, loader)
+            trainer.train()
 

@@ -135,6 +135,90 @@ class CrossTrainer(object):
         # 保存交叉验证结果
         results.append((self.best_params, "<-best param; best fold->", best_fold))
 
+class ML_Trainer(object):
+
+    def __init__(self, config, loader):
+        self.config = config
+        self.loader = loader
+        self.model = LoadModel(config, loader)
+
+    def evaluate_model(self, model, X, y):
+        """评估模型性能并返回指标字典"""
+        pred = model.predict(X)
+
+        if self.config['task'] == 'classification':
+            metrics = {
+                "Accuracy": accuracy_score(y, pred),
+                "F1": f1_score(y, pred, average='weighted'),
+            }
+            try:
+                proba = model.predict_proba(X)[:, 1]
+                metrics["AUC"] = roc_auc_score(y, proba)
+            except:
+                metrics["AUC"] = None
+        elif self.config['task'] == 'regression':  # 回归任务
+            metrics = {
+                "MSE": mean_squared_error(y, pred),
+                "MAE": mean_absolute_error(y, pred),
+                "R2": r2_score(y, pred)
+            }
+        return metrics, pred
+
+    def save_checkpoint(self):
+
+        checkpoint_dir = self.config['checkpoint_dir']
+        if not os.path.exists(checkpoint_dir):  # 先检查是否存在
+                os.makedirs(checkpoint_dir)
+                source_file = self.config['toml_path']
+                dest_path = os.path.join(checkpoint_dir, os.path.basename(source_file))
+                shutil.copy2(source_file, dest_path)  # 复制文件并保留元数据[6,8](@ref)
+
+
+        test_metrics, test_pred = self.evaluate_model(self.model, self.loader.X_test, self.loader.y_test)
+        print("best params: %s" % self.model.get_params)
+        print("best metrics: %s" % test_metrics)
+        print(classification_report(self.loader.y_test, test_pred))
+
+        joblib.dump(self.model,  os.path.join(self.config['checkpoint_dir'], "_checkpoint.pkl"))
+        with open(os.path.join(self.config['checkpoint_dir'], "test_result.txt"), 'w') as f:
+            f.write(f"Best Params: {self.model.get_params}\n")
+            f.write(f"Test Metrics: {test_metrics}\n")
+            f.write("Classification Report:\n")
+            f.write(classification_report(self.loader.y_test, test_pred))
+
+        results_df = pd.DataFrame({
+            'true_label': self.loader.y_test,
+            'predicted_label': test_pred
+        })
+        results_df.to_csv(os.path.join(self.config['checkpoint_dir'], "'predictions.csv"), index=False)
+
+    def train(self):
+
+        if self.config['train_mod'] == "cross_validation":
+            searcher = RandomizedSearchCV(
+                estimator=self.model["model"],
+                param_distributions=self.model["params"],
+                n_iter=self.config['n_iter'],
+                cv=self.loader.cv,
+                scoring=self.config["scoring"],
+                n_jobs=-self.config['n_jobs'],
+                verbose=self.config['verbose'],
+                random_state=self.config['seed']
+            )
+
+            searcher.fit(self.loader.X_train, self.loader.y_train)
+
+            # 保存最佳模型
+            self.model = searcher.best_estimator_
+            self.save_checkpoint()
+
+
+        elif self.config['train_mod'] == "one_split":
+            self.model.fit(self.loader.X_train, self.loader.y_train)
+            test_metrics, test_pred = self.evaluate_model(self.model, self.loader.X_test, self.loader.y_test)
+            print(classification_report(self.loader.y_test, test_pred))
+
+
 class Trainer(object):
 
     def __init__(self, config, model, loader):
@@ -510,7 +594,7 @@ class Trainer(object):
             info += (f"Silhouette Loss: {self.silhouette_loss:.4f}")
             print(info)
 
-    def train_nnea(self):
+    def train(self):
 
         # 初始化早停相关变量（同时监控训练损失和验证指标）
         self.best_metric = -float('inf') if self.config['task'] in ['classification', 'cox'] else float('inf')
@@ -577,37 +661,7 @@ class Trainer(object):
         return metrics, pred
 
 
-    def train(self):
 
-        if self.config['model'] in ["nnea"]:
-            self.train_nnea()
-
-        elif self.config['model'] in ["LR"]:
-
-            if self.config['train_mod'] == "cross_validation":
-                searcher = RandomizedSearchCV(
-                    estimator=self.model["model"],
-                    param_distributions=self.model["params"],
-                    n_iter=15,
-                    cv=self.loader.cv,
-                    scoring=self.config["scoring"],
-                    n_jobs=-self.config['n_jobs'],
-                    verbose=self.config['verbose'],
-                    random_state=self.config['seed']
-                )
-
-                searcher.fit(self.loader.X_train, self.loader.y_train)
-
-
-                # 保存最佳模型
-                self.model = searcher.best_estimator_
-                self.save_checkpoint()
-
-
-            elif self.config['train_mod'] == "one_split":
-                self.model.fit(self.loader.X_train, self.loader.y_train)
-                test_metrics, test_pred = self.evaluate_model(self.model, self.loader.X_test, self.loader.y_test)
-                print(classification_report(self.loader.y_test, test_pred))
 
 class UMAP_Loss(nn.Module):
     def __init__(self, n_neighbors=15, min_dist=0.1):

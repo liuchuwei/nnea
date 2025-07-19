@@ -28,5 +28,5 @@ def main(args):
     config = toml.load(args.config)
 
     "2.generate dataset"
-    loader = Loader(config)
+    loader = Loader(config=config)
     loader.generate_dataset()

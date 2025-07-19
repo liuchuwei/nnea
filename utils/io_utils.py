@@ -79,7 +79,7 @@ def LoadConfig(path):
     return global_config, train_config, model_config, data_config
 class Loader(object):
 
-    def __init__(self, global_config = None, config=None):
+    def __init__(self, global_config=None, config=None):
 
         self.global_config = global_config
         self.config = config
@@ -175,13 +175,13 @@ class Loader(object):
                 cv = StratifiedKFold(
                     n_splits=self.config['n_splits'],
                     shuffle=self.config['shuffle'],
-                    random_state=self.config['seed']
+                    random_state=self.global_config['seed']
                 )
             elif self.config['strategy'] == "KFold":
                 cv = KFold(
                     n_splits=self.config['n_splits'],
                     shuffle=self.config['shuffle'],
-                    random_state=self.config['seed']
+                    random_state=self.global_config['seed']
                 )
 
             self.X_train, self.X_test = X_train, X_test
