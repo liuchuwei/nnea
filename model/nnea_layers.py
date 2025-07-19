@@ -20,7 +20,8 @@ class TrainableGeneSetLayer(nn.Module):
 
     def __init__(self, num_genes, num_sets, min_set_size=10, max_set_size=50,
                  alpha=0.25, num_fc_layers=0, is_deep_layer=False, layer_index=0,
-                 prior_knowledge=None, freeze_prior=True, geneset_dropout=0.3
+                 prior_knowledge=None, freeze_prior=True, geneset_dropout=0.3,
+                 use_attention=False, attention_dim=64
                  ):
         super().__init__()
         self.num_genes = num_genes
@@ -32,26 +33,42 @@ class TrainableGeneSetLayer(nn.Module):
         self.prior_knowledge = prior_knowledge
         self.num_fc_layers = num_fc_layers
         self.geneset_dropout = nn.Dropout(p=geneset_dropout)
+        self.use_attention = use_attention
+        self.attention_dim = attention_dim
+        self.temperature = nn.Parameter(torch.tensor(1.0))  # 温度参数控制稀疏性
 
         # 新增可配置参数
         self.size_reg_weight = nn.Parameter(torch.tensor(0.1))  # 可学习权重
         self.diversity_reg_weight = nn.Parameter(torch.tensor(0.5))
 
         # 初始化成员关系矩阵
-        if prior_knowledge is not None:
-            assert prior_knowledge.shape[1] == num_genes
-            # 将0/1矩阵转换为大数值参数（sigmoid后接近0或1）
-            adjusted_prior = torch.zeros_like(prior_knowledge)
-            adjusted_prior[prior_knowledge > 0.5] = 3  # sigmoid(10) ≈ 1
-            adjusted_prior[prior_knowledge <= 0.5] = -3  # sigmoid(-10) ≈ 0
+        if not use_attention:
 
-            # 存储原始先验知识矩阵（不参与训练）
-            self.register_buffer("prior_mask", prior_knowledge.float())
-            # 可训练参数（允许微调时更新）
-            self.set_membership = nn.Parameter(adjusted_prior, requires_grad=not freeze_prior)
+            if prior_knowledge is not None:
+                assert prior_knowledge.shape[1] == num_genes
+                # 将0/1矩阵转换为大数值参数（sigmoid后接近0或1）
+                adjusted_prior = torch.zeros_like(prior_knowledge)
+                adjusted_prior[prior_knowledge > 0.5] = 3  # sigmoid(10) ≈ 1
+                adjusted_prior[prior_knowledge <= 0.5] = -3  # sigmoid(-10) ≈ 0
+
+                # 存储原始先验知识矩阵（不参与训练）
+                self.register_buffer("prior_mask", prior_knowledge.float())
+                # 可训练参数（允许微调时更新）
+                self.set_membership = nn.Parameter(adjusted_prior, requires_grad=not freeze_prior)
+            else:
+                self.set_membership = nn.Parameter(torch.randn(num_sets, num_genes))
+                self.prior_mask = None  # 无先验知识时设为None
+
         else:
-            self.set_membership = nn.Parameter(torch.randn(num_sets, num_genes))
-            self.prior_mask = None  # 无先验知识时设为None
+            # 注意力模式：使用基因嵌入和查询向量
+            self.gene_embeddings = nn.Parameter(torch.randn(num_genes, attention_dim))
+            self.query_vectors = nn.Parameter(torch.randn(num_sets, attention_dim))
+
+            # 处理先验知识
+            if prior_knowledge is not None:
+                self.register_buffer("prior_mask", prior_knowledge.float())
+            else:
+                self.prior_mask = None
 
         # 设置稀疏性约束以控制基因集大小
 
@@ -87,33 +104,52 @@ class TrainableGeneSetLayer(nn.Module):
         - indicators: 基因集指示矩阵 (num_sets, num_genes)
         """
 
-        if self.fc_transform is not None and not (self.freeze_prior and self.prior_knowledge is not None):
-            # 保留原始值直通（残差连接）以便必要时恢复原始行为
-            transformed = self.set_membership + 0.3*self.fc_transform(self.set_membership)
+        if self.use_attention:
+
+            # 计算注意力分数：查询向量与基因嵌入的点积
+            attn_scores = torch.matmul(self.query_vectors, self.gene_embeddings.t())
+
+            # 应用温度缩放控制稀疏性
+            scaled_scores = attn_scores / torch.clamp(self.temperature, min=0.01)
+
+            # 使用sigmoid生成指示矩阵（保持稀疏性）
+            indicators = torch.sigmoid(scaled_scores)
+
+            # 应用先验知识约束
+            if self.prior_mask is not None:
+                indicators = indicators * self.prior_mask
+
+            # 应用dropout
+            indicators = self.geneset_dropout(indicators)
+
         else:
-            transformed = self.set_membership
+            if self.fc_transform is not None and not (self.freeze_prior and self.prior_knowledge is not None):
+                # 保留原始值直通（残差连接）以便必要时恢复原始行为
+                transformed = self.set_membership + 0.3*self.fc_transform(self.set_membership)
+            else:
+                transformed = self.set_membership
 
-        # 基础成员关系矩阵
-        indicators = torch.sigmoid(transformed)
+            # 基础成员关系矩阵
+            indicators = torch.sigmoid(transformed)
 
-        if self.prior_mask is not None:
-            # 将先验知识作为硬性约束：非先验位置强制归零
-            indicators = indicators * self.prior_mask
-        else:
-            indicators = indicators
+            if self.prior_mask is not None:
+                # 将先验知识作为硬性约束：非先验位置强制归零
+                indicators = indicators * self.prior_mask
+            else:
+                indicators = indicators
 
-        # 应用稀疏性约束
-        # 确保每个基因集达到最小大小
-        if not (self.prior_mask is not None and self.freeze_prior):
+            # 应用稀疏性约束
+            # 确保每个基因集达到最小大小
+            if not (self.prior_mask is not None and self.freeze_prior):
 
-            avg_indicators = indicators.mean(dim=1, keepdim=True)
-            indicators = torch.where(
-                indicators < avg_indicators * 0.3,
-                indicators * 0.01,
-                indicators
-            )
+                avg_indicators = indicators.mean(dim=1, keepdim=True)
+                indicators = torch.where(
+                    indicators < avg_indicators * 0.3,
+                    indicators * 0.01,
+                    indicators
+                )
 
-        indicators = self.geneset_dropout(indicators)
+            indicators = self.geneset_dropout(indicators)
         return indicators
 
     def regularization_loss(self):
@@ -237,67 +273,3 @@ class TrainableGeneSetLayer(nn.Module):
         es_scores = torch.sum(diff, dim=2)
 
         return es_scores
-
-
-class AttentionClassifier(nn.Module):
-    """
-    基于注意力的可解释分类器
-    使用注意力权重展示基因集对分类决策的贡献
-
-    参数:
-    - num_sets: 基因集数量
-    - num_classes: 类别数量
-    - hidden_dim: 注意力机制的隐藏维度
-    """
-
-    def __init__(self, num_sets, num_classes, hidden_dim=64):
-        super().__init__()
-        self.num_classes = num_classes
-        self.num_sets = num_sets
-        self.hidden_dim = hidden_dim
-
-        # 初始化查询向量（每个类别一个）
-        self.query_vectors = nn.Parameter(torch.randn(num_classes, hidden_dim))
-
-        # 初始化键向量（每个基因集一个）
-        self.key_vectors = nn.Parameter(torch.randn(num_sets, hidden_dim))
-
-        # 类别偏置项
-        self.bias = nn.Parameter(torch.zeros(num_classes))
-
-        # 初始化参数
-        nn.init.xavier_uniform_(self.query_vectors)
-        nn.init.xavier_uniform_(self.key_vectors)
-
-    def forward(self, es_scores):
-        """
-        输入:
-        - es_scores: 富集分数，形状 (batch_size, num_sets)
-
-        输出:
-        - logits: 类别分数，形状 (batch_size, num_classes)
-        - attention_weights: 注意力权重，形状 (batch_size, num_classes, num_sets)
-        """
-        batch_size = es_scores.size(0)
-
-        # 1. 计算基础注意力分数
-        # 计算查询向量和键向量的相似度
-        base_attn = torch.matmul(self.query_vectors, self.key_vectors.t())  # (num_classes, num_sets)
-        base_attn = base_attn / (self.hidden_dim ** 0.5)  # 缩放
-
-        # 2. 加入样本特定的富集分数信息
-        # 使用富集分数调整注意力分数
-        attn_scores = base_attn.unsqueeze(0) * es_scores.unsqueeze(1)  # (batch_size, num_classes, num_sets)
-
-        # 3. 计算注意力权重
-        attention_weights = F.softmax(attn_scores, dim=-1)  # (batch_size, num_classes, num_sets)
-
-        # 4. 使用注意力权重聚合富集分数
-        # 展示每个基因集对各类别的贡献
-        logits = torch.matmul(attention_weights, es_scores.unsqueeze(-1)).squeeze(-1)  # (batch_size, num_classes)
-
-        # 5. 添加偏置项
-        logits = logits + self.bias.unsqueeze(0)
-
-        return logits, attention_weights
-

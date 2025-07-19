@@ -212,7 +212,9 @@ def BuildDeepGenesetLayer(config, prior_tensor = None):
                 is_deep_layer=True,
                 layer_index=i,
                 prior_knowledge=prior_tensor,
-                freeze_prior=config['freeze_prior']
+                freeze_prior=config['freeze_prior'],
+                use_attention=config['use_attention'],
+                attention_dim=config['attention_dim']
             )
         else:
             layer = BuildGenesetLayer(config, prior_tensor)
@@ -239,7 +241,9 @@ def BuildGenesetLayer(config, prior_tensor = None):
         prior_knowledge=prior_tensor,
         freeze_prior=config['freeze_prior'],
         num_fc_layers=config['num_fc_layers'],
-        geneset_dropout=config['geneset_dropout']
+        geneset_dropout=config['geneset_dropout'],
+        use_attention=config['use_attention'],
+        attention_dim=config['attention_dim']
     )
         
 

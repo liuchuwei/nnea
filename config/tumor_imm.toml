@@ -102,6 +102,8 @@
         set_max_size = 20
         num_fc_layers = 0
         geneset_dropout = 0.30
+        use_attention = true
+        attention_dim = 64
 
     [nnea.deep_mod]
         geneset_layers = 6
