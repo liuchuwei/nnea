@@ -7,7 +7,7 @@
     n_iter = 500 # iter of random search
 
 [trainer]
-    num_epochs = 2
+    num_epochs = 10000
     batch_size = 128 # [48, 64, 96, 128]
     patience_metric = 1
     patience_loss = 10
