@@ -105,11 +105,19 @@ class nnea(nn.Module):
                 # 更新基因mask - 将当前层激活的基因设置为0
                 indicators = layer.get_set_indicators(R_masked).detach()
                 max_indicators, _ = torch.max(indicators, dim=0)  # 获取每个基因的最大指示值
-                new_mask = (max_indicators < 0.1).float()  # 指示值>0.1的基因设为0
-                if torch.sum(new_mask) == 0:  # 避免全零掩码
-                    new_mask = torch.ones_like(new_mask)
+                # 渐进式衰减策略（核心修改）
+                decay_factor = torch.sigmoid(-self.config.get('decay_factor', 5.0) *
+                                             (max_indicators - self.config.get('decay_threshold', 0.1)))
+                # 更新全局掩码（新激活的基因会获得更小的衰减系数）
+                gene_mask = gene_mask * decay_factor
+                # 保护机制：防止所有基因被过度抑制
+                if torch.sum(gene_mask) < 1e-3:  # 总和阈值
+                    gene_mask = torch.ones_like(gene_mask) * 0.5  # 部分重置
+
+                # new_mask = (max_indicators < 0.1).float()  # 指示值>0.1的基因设为0
+                # if torch.sum(new_mask) == 0:  # 避免全零掩码
+                #     new_mask = torch.ones_like(new_mask)
                 # gene_mask = gene_mask * new_mask  # 更新全局mask
-                gene_mask = gene_mask * (1 - self.config['decay_factor'] * indicators.max(dim=0)[0])
 
             # 拼接所有层的富集分数
             es_scores = torch.cat(all_es_scores, dim=1)

@@ -105,8 +105,8 @@
 
     [nnea.deep_mod]
         geneset_layers = 6
-        decay_factor = 0.7
-
+        decay_factor = 5.0
+        decay_threshold = 0.1
     [nnea.classifier]
         classifier_name = 'attention' # linear or attention
         hidden_dims = [] # [128, 64, 32]
