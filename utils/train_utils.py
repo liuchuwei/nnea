@@ -387,7 +387,7 @@ def BuildOptimizer(params, config=None):
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=config['opt_decay_step'],
                                               gamma=config['opt_decay_rate'])
     elif config['opt_scheduler'] == 'cos':
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['opt_restart'])
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_0=config['T_0'], T_mult=config['T_mult'])
 
     elif config['opt_scheduler'] == 'reduce':
 

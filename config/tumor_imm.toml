@@ -3,7 +3,7 @@
     device = "cuda"
     task = "tumor_immunotherapy" # tumor_sur, cell_class, tumor_drug, tumor_immunotherapy
     model = "nnea" # nnea, LR, DT, RF, AB, LinearSVM, RBFSVM, NN
-    train_mod = "cross_validation"  # "one_split, cross_validation"
+    train_mod = "one_split"  # "one_split, cross_validation"
     n_iter = 20 # iter of random search
 
 [trainer]
@@ -109,10 +109,7 @@
         geneset_layers = 5 # [4, 5, 6]
         decay_factor = 5.0
         decay_threshold = 0.1
-        deep_dropout = [[0.30, 0.30, 0.30, 0.30, 0.30], [0.25, 0.30, 0.35, 0.40, 0.45],
-         [0.45, 0.40, 0.35, 0.30, 0.25], [0.30, 0.35, 0.40, 0.45, 0.50], [0.50, 0.45, 0.40, 0.35, 0.30],
-        [0.30, 0.40, 0.40, 0.50, 0.50], [0.50, 0.50, 0.40, 0.40, 0.30], [0.30, 0.40, 0.50, 0.50, 0.50],
-            [0.50, 0.50, 0.50, 0.40, 0.30]]# [0.3, 0.3, 0.35, 0.35, 0.40, 0.40]
+        deep_dropout = [0.3, 0.3, 0.3, 0.3, 0.3]
 
     [nnea.classifier]
         classifier_name = 'attention' # linear or attention
@@ -124,7 +121,9 @@
     [nnea.optimizer]
         lr = 0.001 # [0.0005, 0.001,0.005]# 0.00025, 0.00075, 0.001, 0.0025, 0.005, 0.0075, 0.01
         opt = "adam"
-        opt_scheduler = "reduce"
+        opt_scheduler = "cos"
+        T_0 = 10
+        T_mult=2
         opt_factor = 0.5
         opt_patience = 5
         weight_decay = 1e-5 # [5e-6, 1e-5, 5e-5] # 1e-4, 0.25e-4, 0.75e-4, 1e-5, 0.75e-5, 0.25e-5, 1e-6
