@@ -86,12 +86,13 @@ class CrossTrainer(object):
     def train(self):
 
         param_grid = {
-            "lr" : self.model_config['lr'],
-            "weight_decay" : self.model_config['weight_decay'],
-            "geneset_dropout": self.model_config['classifier_dropout'],
-            "num_sets": self.model_config['num_sets'],
-            "geneset_layers": self.model_config['geneset_layers'],
-            "weight_decay": self.model_config['weight_decay'],
+            # "lr" : self.model_config['lr'],
+            # "weight_decay" : self.model_config['weight_decay'],
+            # "geneset_dropout": self.model_config['classifier_dropout'],
+            # "num_sets": self.model_config['num_sets'],
+            # "geneset_layers": self.model_config['geneset_layers'],
+            # "weight_decay": self.model_config['weight_decay'],
+            "deep_dropout": self.model_config['deep_dropout'],
         }
 
         param_samples = list(ParameterSampler(param_grid, n_iter=self.model_config['n_iter']))
@@ -530,7 +531,7 @@ class Trainer(object):
 
         if improved:
             self.best_metric = current_metric
-            if self.config['train_mod'] == "one_split"
+            if self.config['train_mod'] == "one_split":
                 self.save_checkpoint(epoch)
 
         return improved

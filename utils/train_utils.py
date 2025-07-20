@@ -202,6 +202,7 @@ def BuildDeepGenesetLayer(config, prior_tensor = None):
     gene_set_layers = nn.ModuleList()
 
     for i in range(config['geneset_layers']):
+        config['geneset_dropout'] = config['deep_dropout'][i]
         if i == 0 and prior_tensor is not None:
             layer = TrainableGeneSetLayer(
                 num_genes=config['num_genes'],
