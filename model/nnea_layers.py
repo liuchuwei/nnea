@@ -35,7 +35,7 @@ class TrainableGeneSetLayer(nn.Module):
         self.geneset_dropout = nn.Dropout(p=geneset_dropout)
         self.use_attention = use_attention
         self.attention_dim = attention_dim
-        self.temperature = nn.Parameter(torch.tensor(1.0))  # 温度参数控制稀疏性
+        self.temperature = nn.Parameter(torch.tensor(1.0), requires_grad=True)  # 温度参数控制稀疏性
 
         # 新增可配置参数
         self.size_reg_weight = nn.Parameter(torch.tensor(0.1))  # 可学习权重
