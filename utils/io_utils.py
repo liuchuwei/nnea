@@ -1,14 +1,15 @@
 import os
+os.environ["SCIPY_ARRAY_API"] = "1"  # 必须在导入scipy/sklearn前设置！
+
 import shutil
 
 import h5py
-import numpy as np
 import pandas as pd
 import torch
 import toml
 import time
 
-from scipy.sparse import csc_matrix, csr_matrix
+from imblearn.over_sampling import KMeansSMOTE, SMOTE
 from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -33,7 +34,7 @@ def flatten_dict(nested_dict, parent_key='', sep='.'):
     return flattened
 
 
-def LoadConfig(path):
+def LoadConfig(path, explain=False):
 
     """
     load config from toml file
@@ -77,11 +78,12 @@ def LoadConfig(path):
     checkpoint_dir = "checkpoints/" + formatted_date + "_" + data_config['dataset'] + "_" + global_config['model']
     model_config['checkpoint_dir'] = checkpoint_dir
 
-    if not os.path.exists(checkpoint_dir):  # 先检查是否存在
-        os.makedirs(checkpoint_dir)
-        source_file = path
-        dest_path = os.path.join(checkpoint_dir, os.path.basename(source_file))
-        shutil.copy2(source_file, dest_path)  # 复制文件并保留元数据[6,8](@ref)
+    if not explain:
+        if not os.path.exists(checkpoint_dir):  # 先检查是否存在
+            os.makedirs(checkpoint_dir)
+            source_file = path
+            dest_path = os.path.join(checkpoint_dir, os.path.basename(source_file))
+            shutil.copy2(source_file, dest_path)  # 复制文件并保留元数据[6,8](@ref)
 
     "define task"
     if global_config['task'] in ["cell_drug", "cell_dependency", "regression"]:
@@ -157,19 +159,19 @@ class Loader(object):
 
         with h5py.File(dataset_path, 'r') as hf:
             self.gene = [x.decode('utf-8') for x in hf['gene'][:]]  # 处理字符串编码
-            rank_exp = hf['rank_exp'][:]
-            sort_exp = hf['sort_exp'][:]
-            norm_exp = hf['norm_exp'][:]
-            pca = hf['pca'][:]
-            phe = hf['phe'][:]
+            self.rank_exp = hf['rank_exp'][:]
+            self.sort_exp = hf['sort_exp'][:]
+            self.norm_exp = hf['norm_exp'][:]
+            self.pca = hf['pca'][:]
+            self.phe = hf['phe'][:]
             self.sample_ids = [x.decode('utf-8') for x in hf['sample_id'][:]]
 
         if self.global_config['model'] in ['nnea']:
-            self.load_torch_dataset(rank_exp, sort_exp, norm_exp, phe, pca)
+            self.load_torch_dataset()
 
         elif self.global_config['model'] in ["LR", "DT", "RF", "AB", "LinearSVM", "RBFSVM", "NN"]:
 
-            X = norm_exp
+            X = self.norm_exp
             if self.config['scaler'] == "mean_sd":
                 X = scale_dense_matrix(X, standardize_method="mean_sd")
 
@@ -179,7 +181,6 @@ class Loader(object):
             if self.config['top_gene']:
                 X = retain_top_var_gene(X, top_gene=self.config['top_gene'])
 
-            y = phe.flatten()
 
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=self.config['test_size'], random_state=self.global_config['seed']
@@ -207,40 +208,42 @@ class Loader(object):
             self.y_train, self.y_test = y_train, y_test
             self.cv = cv
 
-    def load_torch_dataset(self, rank_exp, sort_exp, norm_exp, phe, pca):
+    def load_torch_dataset(self):
 
-        rank_exp_tensor = torch.tensor(rank_exp, dtype=torch.float32)
-        sort_exp_tensor = torch.tensor(sort_exp, dtype=torch.long)
+        rank_exp_tensor = torch.tensor(self.rank_exp, dtype=torch.float32)
+        sort_exp_tensor = torch.tensor(self.sort_exp, dtype=torch.long)
 
         if self.global_config['task'] == "cox":
 
             "generate torch dataset"
             # 索引需用long类型
-            events_tensor = torch.tensor(phe[:,0], dtype=torch.float32)
-            times_tensor = torch.tensor(phe[:,1], dtype=torch.float32)
+            events_tensor = torch.tensor(self.phe[:,0], dtype=torch.float32)
+            times_tensor = torch.tensor(self.phe[:,1], dtype=torch.float32)
 
             base_dataset = (rank_exp_tensor, sort_exp_tensor, times_tensor, events_tensor)
-            targets = phe[:, 0]
+            targets = self.phe[:, 0]
 
 
         elif self.global_config['task'] in ['classification', "regression"]:
 
-            y_tensor = torch.tensor(phe, dtype=torch.float32)
-            base_dataset = (rank_exp_tensor, sort_exp_tensor, y_tensor)
-            targets = phe.flatten()  # 目标变量作为分层依据
+            y_tensor = torch.tensor(self.phe, dtype=torch.float32)
+            n_samples = y_tensor.shape[0]
+            indices = torch.arange(n_samples, dtype=torch.long)
+            base_dataset = (rank_exp_tensor, sort_exp_tensor, y_tensor, indices)
+            targets = self.phe.flatten()  # 目标变量作为分层依据
 
         elif self.global_config['task'] in ['autoencoder']:
 
-            norm_exp_tensor = torch.tensor(norm_exp, dtype=torch.float32)
+            norm_exp_tensor = torch.tensor(self.norm_exp, dtype=torch.float32)
             base_dataset = (rank_exp_tensor, sort_exp_tensor, norm_exp_tensor)
             targets = None
 
         elif self.global_config['task'] in ['umap']:
 
-            pca_tensor = torch.tensor(pca[:,:self.config['pca_dim']], dtype=torch.float32)
-            y_tensor = torch.tensor(phe, dtype=torch.float32)
+            pca_tensor = torch.tensor(self.pca[:,:self.config['pca_dim']], dtype=torch.float32)
+            y_tensor = torch.tensor(self.phe, dtype=torch.float32)
             base_dataset = (rank_exp_tensor, sort_exp_tensor, pca_tensor, y_tensor)
-            targets = phe.flatten()
+            targets = self.phe.flatten()
 
         self.cv_loaders = []
         self.targets = targets
@@ -253,6 +256,7 @@ class Loader(object):
 
         stratify = targets if self.global_config['task'] == 'classification' else None
 
+
         train_idx, test_idx = train_test_split(
             indices,
             test_size=self.config['test_size'],
@@ -260,13 +264,38 @@ class Loader(object):
             random_state=self.global_config['seed']
         )
 
+        if self.config['train_indice']:
+            train_idx = pd.read_csv(self.config['train_indice'], header=None)
+            train_idx = train_idx.loc[:, 0].values
+        if self.config['test_indice']:
+            test_idx = pd.read_csv(self.config['test_indice'], header=None)
+            test_idx = test_idx.loc[:, 0].values
+
         # 创建训练集和测试集的TensorDataset
-        train_dataset = torch.utils.data.TensorDataset(
-            *[tensor[train_idx] for tensor in base_dataset]
-        )
         test_dataset = torch.utils.data.TensorDataset(
             *[tensor[test_idx] for tensor in base_dataset]
         )
+
+        if self.config['oversampling']:
+            X_train = self.norm_exp[train_idx,:]  # 特征矩阵
+            y_train = self.targets[train_idx].astype(int)
+
+            sm = SMOTE(k_neighbors=self.config['k_neighbors'], random_state=self.global_config['seed'])
+            X_resampled, y_resampled = sm.fit_resample(X_train, y_train)
+
+            rank_exp_resampled, sort_exp_resampled = self.expToRank(pd.DataFrame(X_resampled))
+            y_tensor = torch.tensor(y_resampled, dtype=torch.float32)
+            n_samples = y_tensor.shape[0]
+            indices = torch.arange(n_samples, dtype=torch.long)
+            rank_exp_tensor = torch.tensor(rank_exp_resampled.values, dtype=torch.float32)
+            sort_exp_tensor = torch.tensor(sort_exp_resampled.copy(), dtype=torch.long)
+            train_dataset = (rank_exp_tensor, sort_exp_tensor, y_tensor, indices)
+
+        else:
+            train_dataset = torch.utils.data.TensorDataset(
+                *[tensor[train_idx] for tensor in base_dataset]
+            )
+
 
         # 创建测试集loader（不洗牌）
         # self.test_loader = torch.utils.data.DataLoader(
@@ -284,21 +313,42 @@ class Loader(object):
 
         elif self.global_config['train_mod'] == "one_split":
 
-            stratify = targets[train_idx] if self.global_config['task'] == 'classification' else None
+            if self.config['oversampling']:
 
-            train_idx, val_idx = train_test_split(
-                train_idx,
-                test_size=self.config['val_size'],
-                stratify=stratify,  # 添加分层抽样
-                random_state=self.global_config['seed']
-            )
-            self.train_dataset = torch.utils.data.TensorDataset(
-                *[tensor[train_idx] for tensor in base_dataset]
-            )
-            self.val_dataset = torch.utils.data.TensorDataset(
-                *[tensor[val_idx] for tensor in base_dataset]
-            )
+                stratify = y_tensor if self.global_config['task'] == 'classification' else None
 
+                train_idx, val_idx = train_test_split(
+                    indices,
+                    test_size=self.config['val_size'],
+                    stratify=stratify,  # 添加分层抽样
+                    random_state=self.global_config['seed']
+                )
+                self.train_dataset = torch.utils.data.TensorDataset(
+                    *[tensor[train_idx] for tensor in train_dataset]
+                )
+                self.val_dataset = torch.utils.data.TensorDataset(
+                    *[tensor[val_idx] for tensor in train_dataset]
+                )
+                self.train_indices = train_idx
+                self.val_indices = val_idx
+
+            else:
+                stratify = targets[train_idx] if self.global_config['task'] == 'classification' else None
+
+                train_idx, val_idx = train_test_split(
+                    train_idx,
+                    test_size=self.config['val_size'],
+                    stratify=stratify,  # 添加分层抽样
+                    random_state=self.global_config['seed']
+                )
+                self.train_dataset = torch.utils.data.TensorDataset(
+                    *[tensor[train_idx] for tensor in base_dataset]
+                )
+                self.val_dataset = torch.utils.data.TensorDataset(
+                    *[tensor[val_idx] for tensor in base_dataset]
+                )
+                self.train_indices = train_idx
+                self.val_indices = val_idx
     def split_cross_validation(self, base_dataset, targets=None):
         """生成交叉验证数据划分"""
         n_samples =  len(base_dataset)

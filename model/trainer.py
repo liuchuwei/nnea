@@ -91,6 +91,7 @@ class CrossTrainer(object):
             "batch_size" : self.model_config['batch_size'],
             "deep_dropout": self.model_config['deep_dropout'],
             "attention_dim": self.model_config['attention_dim'],
+            "num_sets": self.model_config['num_sets'],
         }
 
         param_samples = list(ParameterSampler(param_grid, n_iter=self.model_config['n_iter']))
@@ -246,7 +247,10 @@ class Trainer(object):
         class_counts = torch.bincount(labels.long())
         total_samples = labels.size(0)
         num_classes = class_counts.size(0)
-        class_weights = total_samples / (num_classes * class_counts.float())
+        if not self.config['class_weights']:
+            class_weights = total_samples / (num_classes * class_counts.float())
+        else:
+            class_weights = torch.tensor(self.config['class_weights']).float()
         self.class_weights = class_weights.to(self.config['device'])
 
         if self.config['task'] == "umap":
@@ -271,7 +275,8 @@ class Trainer(object):
         silhouette_loss = 0.0
         all_predictions = []  # 存储所有预测值
         all_targets = []  # 存储所有真实标签
-
+        all_indice = []
+        all_probs = []
         with torch.no_grad():
             for batch_data in loader:
 
@@ -293,6 +298,8 @@ class Trainer(object):
                     # 累积预测值和标签
                     all_predictions.append(predicted.cpu())
                     all_targets.append(batch_y.cpu())
+                    all_indice.append(batch_data[-1].cpu())
+                    all_probs.append(logits.cpu())
 
                 elif self.config['task'] in ['cox']:
                     events = batch_data[3]
@@ -332,9 +339,12 @@ class Trainer(object):
                 # 计算混淆矩阵和F1分数
                 all_preds = torch.cat(all_predictions).numpy()
                 all_targets = torch.cat(all_targets).numpy()
+                all_indice = torch.cat(all_indice).numpy()
+                all_probs = torch.cat(all_probs).numpy()  # 需要提前在测试循环中收集概率
 
                 self.all_predictions = all_preds
                 self.all_targets = all_targets
+                self.all_indice = all_indice
 
                 # 计算每个类别的精确率、召回率和F1分数
                 self.classification_report = classification_report(
@@ -346,6 +356,20 @@ class Trainer(object):
                 self.macro_f1 = self.classification_report['macro avg']['f1-score']
                 self.weighted_f1 = self.classification_report['weighted avg']['f1-score']
 
+                from sklearn.metrics import roc_auc_score
+                n_classes = len(self.config['class_names'])
+
+                if n_classes == 2:
+                    # 二分类使用正类的概率
+                    self.roc_auc = roc_auc_score(all_targets, all_probs[:, 1])
+                else:
+                    # 多分类使用One-vs-Rest策略和宏平均
+                    self.roc_auc = roc_auc_score(
+                        all_targets,
+                        all_probs,
+                        multi_class='ovr',
+                        average='macro'
+                    )
 
             if self.config['task'] in ['autoencoder']:
                 self.recon_loss = recon_loss / total_samples
@@ -517,7 +541,8 @@ class Trainer(object):
         if self.config['task'] == "cox":
             current_metric = self.accuracy
         elif self.config['task'] == "classification":
-            current_metric = self.accuracy
+            # current_metric = self.macro_f1
+            current_metric = self.roc_auc
         elif self.config['task'] == "regression":
             current_metric = -self.mse  # 负值方便统一逻辑（越大越好）
         elif self.config['task'] == "autoencoder":
@@ -542,12 +567,14 @@ class Trainer(object):
                   f"Train accuracy: {self.accuracy:.4f} "
                   f"Train macro f1: {self.macro_f1:.4f}, "
                   f"Train weighted f1: {self.weighted_f1:.4f}, "
+                  f"Train roc_auc: {self.roc_auc:.4f}, "
                   )
             self.evaluate(loader=self.valid_loader)
 
-            info += (f"Val accuracy: {self.accuracy:.4f} "
+            info += (f"Val accuracy: {self.accuracy:.4f}, "
                   f"Val macro f1: {self.macro_f1:.4f}, "
-                  f"Val weighted f1: {self.weighted_f1:.4f}")
+                  f"Val weighted f1: {self.weighted_f1:.4f}, "
+                     f"Val roc_auc: {self.roc_auc:.4f}")
 
             print(info)
 

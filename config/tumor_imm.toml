@@ -7,25 +7,30 @@
     n_iter = 500 # iter of random search
 
 [trainer]
-    num_epochs = 10000
-    batch_size = [64, 96, 128] # [48, 64, 96, 128]
+    num_epochs = 10000 # 10000
+    batch_size = [48, 64, 96, 128] # [48, 64, 96, 128]
     patience_metric = 1
-    patience_loss = 10
+    patience_loss = 3
     verbose = 0
     n_jobs = 10
     scoring = 'roc_auc' # neg_mean_squared_error
     task_loss_weight = 1
     reg_loss_weitht = 1
+    class_weights = ""
 
 [dataload]
     dataset = 'imm_response'
-    test_size = 0.1
-    val_size = 0.1
+    test_size = 0.2
+    val_size = 0.2
     strategy  = "StratifiedKFold"
     n_splits = 5
     shuffle = true
     scaler = "min_max"
     top_gene = 3000
+    oversampling = false
+    k_neighbors=5
+    train_indice = "" # "C:\\Users\\liuch\\Desktop\\nnea\\data\\tumor\\immune_therapy\\train_indice_all.txt"
+    test_indice =  "" #"C:\\Users\\liuch\\Desktop\\nnea\\data\\tumor\\immune_therapy\\test_indice_all.txt"
 
 [LR] #  Logistic_Regression
     max_iter = 5000
@@ -97,22 +102,20 @@
         geneset_layer_mode = "deep_mode" # one_mode; deep_mode
         use_piror_knowldege = false
         geneset_layer_alpha = 0.25
-        num_sets = 6 # [4, 5, 6]  # 5~30, step = 1 [5, 30, 1]
+        num_sets = [4, 5, 6] # [4, 5, 6]  # 5~30, step = 1 [5, 30, 1]
         set_min_size = 3
         set_max_size = 20
         num_fc_layers = 0
         geneset_dropout = 0.3 #[0.25, 0.30, 0.35]
         use_attention = true
-        attention_dim = [32, 48, 64, 128]
+        attention_dim = [32, 64, 128]
 
     [nnea.deep_mod]
-        geneset_layers = 5 # [4, 5, 6]
+        geneset_layers = 5 # 5 # [4, 5, 6]
         decay_factor = 5.0
         decay_threshold = 0.1
         deep_dropout = [[0.30, 0.30, 0.30, 0.30, 0.30], [0.25, 0.30, 0.35, 0.40, 0.45],
-         [0.45, 0.40, 0.35, 0.30, 0.25], [0.30, 0.35, 0.40, 0.45, 0.50], [0.50, 0.45, 0.40, 0.35, 0.30],
-        [0.30, 0.40, 0.40, 0.50, 0.50], [0.50, 0.50, 0.40, 0.40, 0.30], [0.30, 0.40, 0.50, 0.50, 0.50],
-            [0.50, 0.50, 0.50, 0.40, 0.30]]# [0.3, 0.3, 0.35, 0.35, 0.40, 0.40]
+        [0.30, 0.35, 0.40, 0.45, 0.50], [0.30, 0.40, 0.40, 0.50, 0.50], [0.30, 0.40, 0.50, 0.50, 0.50]]# [0.3, 0.4, 0.4, 0.5, 0.5]
 
     [nnea.classifier]
         classifier_name = 'attention' # linear or attention
@@ -122,9 +125,9 @@
         class_names = [0, 1]
 
     [nnea.optimizer]
-        lr = [0.0005, 0.001,0.005] # 0.001# 0.00025, 0.00075, 0.001, 0.0025, 0.005, 0.0075, 0.01
+        lr =[0.0005, 0.001,0.005] # 0.0005 # 0.001# 0.00025, 0.00075, 0.001, 0.0025, 0.005, 0.0075, 0.01
         opt = "adam"
         opt_scheduler = "reduce"
         opt_factor = 0.5
         opt_patience = 5
-        weight_decay = [5e-6, 1e-5] # [5e-6, 1e-5, 5e-5] # 1e-4, 0.25e-4, 0.75e-4, 1e-5, 0.75e-5, 0.25e-5, 1e-6
+        weight_decay =  [5e-6, 1e-5, 5e-5]  # [5e-6, 1e-5, 5e-5] # 1e-4, 0.25e-4, 0.75e-4, 1e-5, 0.75e-5, 0.25e-5, 1e-6

@@ -18,3 +18,12 @@ wget --referer="https://figshare.com/" \
 -c "https://figshare.com/ndownloader/files/56402489" -O phe.txt 
 python run.py dataload --config config/generate_dataset.toml
 ```
+
+### Generate Dataset
+```shell
+dataload --config config/generate_dataset.toml
+```
+### Train model
+```shell
+train --config config/tumor_imm.toml
+```
