@@ -236,7 +236,7 @@ class Loader(object):
 
             norm_exp_tensor = torch.tensor(self.norm_exp, dtype=torch.float32)
             base_dataset = (rank_exp_tensor, sort_exp_tensor, norm_exp_tensor)
-            targets = None
+            targets = self.phe.flatten()
 
         elif self.global_config['task'] in ['umap']:
 

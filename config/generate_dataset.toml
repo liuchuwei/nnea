@@ -1,3 +1,3 @@
-task = "tumor_immunotherapy" # tumor_sur, cell_class, tumor_drug, tumor_immunotherapy, cell_drug, single_cell
-name = "imm_response" #  COAD_sur,lym_gender,laptinib_drug, tumor_imm, pbmc3k
+task = "single_cell" # tumor_sur, cell_class, tumor_drug, tumor_immunotherapy, cell_drug, single_cell
+name = "pbmc3k" #  COAD_sur,lym_gender,laptinib_drug, tumor_imm, pbmc3k
 standardize_method = "mean_sd" # mean_sd, min_max, none

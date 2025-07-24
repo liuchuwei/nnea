@@ -1,46 +1,76 @@
-[gobal]
+[global]
     seed = 888888888
     device = "cuda"
-    dataset = 'cell_laptinib'
     task = "cell_drug" # cell_drug, tumor_sur, cell_class, tumor_drug
     model = "nnea"
-
-[piror_knowldege]
-    use_piror_knowldege = false
-    piror_path = "data/genesets/c1.all.v2025.1.Hs.symbols.gmt"
-    freeze_prior = false
-
-[geneset_layer]
-    geneset_layer_mode = "one_mode" # one_mode; deep_mod
-    use_piror_knowldege = false
-    geneset_layer_alpha = 0.25
-    num_sets = 20
-    set_min_size = 10
-    set_max_size = 50
-
-[deep_mod]
-    geneset_layers = 2
-    sub_num_genesets = 10
-
-[classifier]
-    classifier_name = 'linear' # linear or attention
-    hidden_dims = [128, 64, 32]
-    output_dim = 1
-    classifier_dropout = [0.4, 0.3]
-
-
-[optimizer]
-    lr = 0.001
-    opt = "adam"
-    opt_scheduler = "reduce"
-    opt_factor = 0.5
-    opt_patience = 5
-    weight_decay = 1e-5
+    train_mod = "one_split"  # "one_split, cross_validation"
 
 [trainer]
-    batch_size = 64
-    num_epochs = 10000
-    patience = 10
+    num_epochs = 10000 # 10000
+    batch_size = 16 # [48, 64, 96, 128]
+    patience_metric = 1
+    patience_loss = 3
+    verbose = 0
+    n_jobs = 10
+    scoring = 'roc_auc' # neg_mean_squared_error
+    task_loss_weight = 1
+    reg_loss_weitht = 1
+    class_weights = ""
 
+[dataload]
+    dataset = 'laptinib_drug'
+    test_size = 0.2
+    val_size = 0.2
+    strategy  = "StratifiedKFold"
+    n_splits = 5
+    shuffle = true
+    scaler = "min_max"
+    top_gene = 3000
+    oversampling = false
+    k_neighbors=5
+    train_indice = "" # "C:\\Users\\liuch\\Desktop\\nnea\\data\\tumor\\immune_therapy\\train_indice_all.txt"
+    test_indice =  "" #"C:\\Users\\liuch\\Desktop\\nnea\\data\\tumor\\immune_therapy\\test_indice_all.txt"
+
+[nnea]
+
+    [nnea.piror_knowldege]
+        use_piror_knowldege = false
+        piror_path = "data/genesets/c1.all.v2025.1.Hs.symbols.gmt"
+        freeze_prior = false
+
+    [nnea.geneset_layer]
+        geneset_layer_mode = "deep_mode" # one_mode; deep_mode
+        use_piror_knowldege = false
+        geneset_layer_alpha = 0.25
+        num_sets = 6 # [4, 5, 6]  # 5~30, step = 1 [5, 30, 1]
+        set_min_size = 3
+        set_max_size = 20
+        num_fc_layers = 0
+        geneset_dropout = 0.3 #[0.25, 0.30, 0.35]
+        use_attention = true
+        attention_dim = 32 # 32
+
+
+    [nnea.deep_mod]
+        geneset_layers = 5
+        decay_factor = 5.0
+        decay_threshold = 0.1
+        sub_num_genesets = 10
+        deep_dropout = [0.25, 0.30, 0.35, 0.40, 0.45]
+
+    [nnea.classifier]
+        classifier_name = 'attention' # linear or attention
+        hidden_dims = [] # [128, 64, 32]
+        output_dim = 1
+        classifier_dropout = [0.4, 0.3]
+
+
+    [nnea.optimizer]
+        lr = 0.001
+        opt = "adam"
+        opt_scheduler = "reduce"
+        opt_factor = 0.5
+        opt_patience = 5
+        weight_decay = 1e-5
 
 

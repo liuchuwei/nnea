@@ -243,15 +243,16 @@ class Trainer(object):
 
         self.scheduler, self.optimizer = BuildOptimizer(params=self.model.parameters(), config=self.config)
 
-        labels = self.loader['train'].tensors[2].squeeze()  # 假设标签是TensorDataset的第二个张量
-        class_counts = torch.bincount(labels.long())
-        total_samples = labels.size(0)
-        num_classes = class_counts.size(0)
-        if not self.config['class_weights']:
-            class_weights = total_samples / (num_classes * class_counts.float())
-        else:
-            class_weights = torch.tensor(self.config['class_weights']).float()
-        self.class_weights = class_weights.to(self.config['device'])
+        if not self.config['task'] in ['umap', 'autoencoder']:
+            labels = self.loader['train'].tensors[2].squeeze()  # 假设标签是TensorDataset的第二个张量
+            class_counts = torch.bincount(labels.long())
+            total_samples = labels.size(0)
+            num_classes = class_counts.size(0)
+            if not self.config['class_weights']:
+                class_weights = total_samples / (num_classes * class_counts.float())
+            else:
+                class_weights = torch.tensor(self.config['class_weights']).float()
+            self.class_weights = class_weights.to(self.config['device'])
 
         if self.config['task'] == "umap":
             self.umap_loss = UMAP_Loss(
@@ -310,7 +311,7 @@ class Trainer(object):
 
                 elif self.config['task'] in ['regression']:
                     predictions = logits.squeeze()
-                    batch_y = batch_data[2].to(device, dtype=torch.float)
+                    batch_y = batch_data[2].to(device, dtype=torch.float).squeeze()
 
                     # 计算 MSE 和 MAE
                     mse_loss += nn.MSELoss()(predictions, batch_y).item() * len(batch_y)
@@ -340,7 +341,6 @@ class Trainer(object):
                 all_preds = torch.cat(all_predictions).numpy()
                 all_targets = torch.cat(all_targets).numpy()
                 all_indice = torch.cat(all_indice).numpy()
-                all_probs = torch.cat(all_probs).numpy()  # 需要提前在测试循环中收集概率
 
                 self.all_predictions = all_preds
                 self.all_targets = all_targets
@@ -361,12 +361,13 @@ class Trainer(object):
 
                 if n_classes == 2:
                     # 二分类使用正类的概率
+                    all_probs = torch.cat(all_probs).numpy()  # 需要提前在测试循环中收集概率
                     self.roc_auc = roc_auc_score(all_targets, all_probs[:, 1])
                 else:
                     # 多分类使用One-vs-Rest策略和宏平均
                     self.roc_auc = roc_auc_score(
                         all_targets,
-                        all_probs,
+                        F.softmax(torch.cat(all_probs), dim=1),
                         multi_class='ovr',
                         average='macro'
                     )

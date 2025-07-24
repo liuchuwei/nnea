@@ -60,7 +60,7 @@ class nnea(nn.Module):
         """构建自编码器的解码器层"""
         # 使用基因集层相同的输入维度
         if self.config['geneset_layer_mode'] == 'deep_mode':
-            decoder_input_dim = self.config['geneset_layers'] * self.config['sub_num_genesets']
+            decoder_input_dim = self.config['geneset_layers'] * self.config['num_sets']
         else:
             decoder_input_dim = self.config['num_sets']
 
