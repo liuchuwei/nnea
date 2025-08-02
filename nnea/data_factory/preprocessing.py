@@ -8,6 +8,7 @@ import pandas as pd
 from typing import Optional, Union, List, Tuple
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif
+from sklearn.impute import SimpleImputer
 import warnings
 
 
@@ -16,6 +17,180 @@ class pp:
     数据预处理类，提供各种预处理方法
     """
     
+    @staticmethod
+    def fillna(X, method: str = "mean", fill_value: float = 0):
+        """
+        处理缺失值
+        
+        Parameters:
+        -----------
+        X : np.ndarray
+            输入数据矩阵
+        method : str
+            处理方法：'mean', 'median', 'zero', 'drop'
+        fill_value : float
+            填充值，用于'zero'方法
+            
+        Returns:
+        --------
+        np.ndarray
+            处理后的数据矩阵
+        """
+        if X is None:
+            return X
+        
+        if not np.isnan(X).any():
+            return X
+        
+        if method == "mean":
+            # 检查每一列是否全为NaN，若是则用0填充，否则用均值填充
+            nan_all_col = np.isnan(X).all(axis=0)
+            if nan_all_col.any():
+                X[:, nan_all_col] = 0
+            # 对剩余有NaN的列用均值填充
+            imputer = SimpleImputer(strategy='mean')
+            X = imputer.fit_transform(X)
+            
+        elif method == "median":
+            # 检查每一列是否全为NaN，若是则用0填充，否则用中位数填充
+            nan_all_col = np.isnan(X).all(axis=0)
+            if nan_all_col.any():
+                X[:, nan_all_col] = 0
+            # 对剩余有NaN的列用中位数填充
+            imputer = SimpleImputer(strategy='median')
+            X = imputer.fit_transform(X)
+            
+        elif method == "zero":
+            # 用指定值填充
+            X = np.nan_to_num(X, nan=fill_value)
+            
+        elif method == "drop":
+            # 删除包含缺失值的行
+            mask = ~np.isnan(X).any(axis=1)
+            X = X[mask]
+            
+        else:
+            raise ValueError(f"Unsupported fillna method: {method}")
+        
+        return X
+    
+    @staticmethod
+    def scale(X, method: str = "standard"):
+        """
+        数据标准化
+        
+        Parameters:
+        -----------
+        X : np.ndarray
+            输入数据矩阵
+        method : str
+            标准化方法：'standard', 'minmax', 'robust'
+            
+        Returns:
+        --------
+        np.ndarray
+            标准化后的数据矩阵
+        """
+        if X is None:
+            return X
+        
+        if method == "standard":
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+        elif method == "minmax":
+            scaler = MinMaxScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+        elif method == "robust":
+            scaler = RobustScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+        else:
+            raise ValueError(f"Unsupported scale method: {method}")
+        
+        return X_scaled
+    
+    @staticmethod
+    def x_train_test(X, nadata, test_size: float = 0.2, random_state: int = 42):
+        """
+        获取训练集和测试集的X数据
+        
+        Parameters:
+        -----------
+        X : np.ndarray
+            特征数据矩阵
+        nadata : nadata对象
+            包含划分信息的nadata对象
+        test_size : float
+            测试集比例
+        random_state : int
+            随机种子
+            
+        Returns:
+        --------
+        tuple
+            (X_train, X_test)
+        """
+        if hasattr(nadata, 'Model') and hasattr(nadata.Model, 'indices'):
+            # 使用已保存的划分信息
+            train_idx = nadata.Model.indices['train']
+            test_idx = nadata.Model.indices['test']
+            X_train, X_test = X[train_idx], X[test_idx]
+        else:
+            # 使用随机划分
+            from sklearn.model_selection import train_test_split
+            indices = np.arange(X.shape[0])
+            train_idx, test_idx = train_test_split(
+                indices, test_size=test_size, random_state=random_state
+            )
+            X_train, X_test = X[train_idx], X[test_idx]
+        
+        return X_train, X_test
+    
+    @staticmethod
+    def y_train_test(y, nadata, test_size: float = 0.2, random_state: int = 42):
+        """
+        获取训练集和测试集的y数据
+        
+        Parameters:
+        -----------
+        y : pd.Series or np.ndarray
+            标签数据
+        nadata : nadata对象
+            包含划分信息的nadata对象
+        test_size : float
+            测试集比例
+        random_state : int
+            随机种子
+            
+        Returns:
+        --------
+        tuple
+            (y_train, y_test)
+        """
+        if hasattr(nadata, 'Model') and hasattr(nadata.Model, 'indices'):
+            # 使用已保存的划分信息
+            train_idx = nadata.Model.indices['train']
+            test_idx = nadata.Model.indices['test']
+            if isinstance(y, pd.Series):
+                y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+            else:
+                y_train, y_test = y[train_idx], y[test_idx]
+        else:
+            # 使用随机划分
+            from sklearn.model_selection import train_test_split
+            indices = np.arange(len(y))
+            train_idx, test_idx = train_test_split(
+                indices, test_size=test_size, random_state=random_state
+            )
+            if isinstance(y, pd.Series):
+                y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+            else:
+                y_train, y_test = y[train_idx], y[test_idx]
+        
+        return y_train, y_test
+
     @staticmethod
     def normalize(nadata, method: str = "zscore", scale_factor: float = 10000):
         """

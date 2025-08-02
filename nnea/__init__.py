@@ -35,6 +35,9 @@ from .model.models import build, train, eval, explain, save_model, load_project,
 #     run_multi_model_cv_experiment
 # )
 
+# 数据预处理功能
+from .data_factory import pp
+
 # 日志相关
 from .logging_utils import setup_logging, get_logger, logger
 
@@ -70,6 +73,7 @@ __all__ = [
     # "HyperparameterOptimizer",
     # "MultiModelCrossValidator",
     # "run_multi_model_cv_experiment",
+    "pp",
     "setup_logging",
     "get_logger",
     "logger"

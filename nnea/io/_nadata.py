@@ -693,6 +693,11 @@ class ModelContainer:
         val_idx : Optional[list]
             验证集索引
         """
+        # 检查是否只输入了train_idx和test_idx，如果是则自动删除val_idx
+        if train_idx is not None and test_idx is not None and val_idx is None:
+            # 如果只设置了train_idx和test_idx，将val_idx设置为None
+            val_idx = None
+        
         # 创建索引DataFrame
         indices_data = {}
         if train_idx is not None:
@@ -741,6 +746,9 @@ class ModelContainer:
             self.indices['test'] = test_idx
         if val_idx is not None:
             self.indices['val'] = val_idx
+        else:
+            # 如果val_idx为None，从存储中删除val索引
+            self.indices['val'] = None
     
     def get_indices(self, split: str = None):
         """
@@ -877,3 +885,66 @@ class ModelContainer:
         详细字符串表示
         """
         return self.__str__()
+    
+    def __setitem__(self, key, value):
+        """
+        支持字典赋值操作，将值存储到models字典中
+        
+        Parameters:
+        -----------
+        key : str
+            键名
+        value : Any
+            要存储的值
+        """
+        self.models[key] = value
+    
+    def __getitem__(self, key):
+        """
+        支持字典访问操作，从models字典中获取值
+        
+        Parameters:
+        -----------
+        key : str
+            键名
+            
+        Returns:
+        --------
+        Any
+            存储的值
+        """
+        return self.models[key]
+    
+    def __contains__(self, key):
+        """
+        支持in操作符，检查键是否存在于models字典中
+        
+        Parameters:
+        -----------
+        key : str
+            键名
+            
+        Returns:
+        --------
+        bool
+            是否存在
+        """
+        return key in self.models
+    
+    def get(self, key, default=None):
+        """
+        获取值，如果键不存在则返回默认值
+        
+        Parameters:
+        -----------
+        key : str
+            键名
+        default : Any
+            默认值
+            
+        Returns:
+        --------
+        Any
+            存储的值或默认值
+        """
+        return self.models.get(key, default)
