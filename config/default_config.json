@@ -1,0 +1,49 @@
+{
+  "model": {
+    "type": "neural_network",
+    "layers": [100, 50, 25],
+    "activation": "relu",
+    "dropout": 0.2,
+    "batch_norm": true,
+    "regularization": "l2",
+    "regularization_factor": 0.01,
+    "output_activation": "sigmoid"
+  },
+  "data": {
+    "train_path": "",
+    "test_path": "",
+    "validation_split": 0.2,
+    "batch_size": 32,
+    "shuffle": true,
+    "normalize": true,
+    "augmentation": false,
+    "feature_selection": true,
+    "max_features": 1000
+  },
+  "training": {
+    "epochs": 100,
+    "learning_rate": 0.001,
+    "optimizer": "adam",
+    "loss": "binary_crossentropy",
+    "early_stopping": true,
+    "patience": 10,
+    "reduce_lr_on_plateau": true,
+    "min_lr": 1e-7,
+    "metrics": ["accuracy", "precision", "recall", "f1", "auc"]
+  },
+  "output": {
+    "model_path": "models/",
+    "results_path": "results/",
+    "log_path": "logs/",
+    "save_best_only": true,
+    "save_format": "h5"
+  },
+  "explainability": {
+    "feature_importance": true,
+    "shap_values": true,
+    "gradient_analysis": true,
+    "attention_weights": true,
+    "gene_importance": true,
+    "pathway_analysis": true
+  }
+} 

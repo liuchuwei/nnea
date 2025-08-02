@@ -21,13 +21,13 @@ class TrainableGeneSetLayer(nn.Module):
     def __init__(self, num_genes, num_sets, min_set_size=10, max_set_size=50,
                  alpha=0.25, num_fc_layers=0, is_deep_layer=False, layer_index=0,
                  prior_knowledge=None, freeze_prior=True, geneset_dropout=0.3,
-                 use_attention=False, attention_dim=64
+                 use_attention=False, attention_dim=64, geneset_threshold = 0.0
                  ):
         super().__init__()
         self.num_genes = num_genes
         self.num_sets = num_sets
         # self.alpha = alpha
-        self.alpha = nn.Parameter(torch.tensor(0.25))
+        self.alpha = nn.Parameter(torch.tensor(-1.0))
         self.is_deep_layer = is_deep_layer
         self.layer_index = layer_index
         self.prior_knowledge = prior_knowledge
@@ -36,6 +36,8 @@ class TrainableGeneSetLayer(nn.Module):
         self.use_attention = use_attention
         self.attention_dim = attention_dim
         self.temperature = nn.Parameter(torch.tensor(1.0), requires_grad=True)  # 温度参数控制稀疏性
+        # self.geneset_threshold = nn.Parameter(torch.tensor(geneset_threshold), requires_grad=True)
+        self.geneset_threshold = 1e-5
 
         # 新增可配置参数
         self.size_reg_weight = nn.Parameter(torch.tensor(0.1))  # 可学习权重
@@ -164,6 +166,8 @@ class TrainableGeneSetLayer(nn.Module):
 
             # 计算每个基因集的"基因数"（期望值）
             set_sizes = torch.sum(indicators, dim=1)
+            # set_sizes = torch.sum(indicators>self.geneset_threshold, dim=1).float()
+            # set_sizes = torch.sum(indicators>torch.sigmoid(self.geneset_threshold), dim=1).float()
 
             # 约束1: 防止基因集过小
             size_min_loss = F.relu(self.min_set_size - set_sizes).mean()
@@ -225,7 +229,10 @@ class TrainableGeneSetLayer(nn.Module):
                                 index=S.long().unsqueeze(1).expand(-1, indicators.size(0), -1))
 
         # 计算正集加权 (alpha=0.25)
+        # pos_indicators = sorted_indicators>torch.sigmoid(self.geneset_threshold)
+
         clamped_input = torch.clamp(R_sorted * sorted_indicators, min=1e-8, max=1e4)
+        # clamped_input = torch.clamp(R_sorted * pos_indicators, min=1e-8, max=1e4)
         # weighted_pos = (R_sorted * sorted_indicators) ** self.alpha
         # weighted_pos = clamped_input ** self.alpha
         weighted_pos = clamped_input ** torch.sigmoid(self.alpha)
@@ -241,7 +248,8 @@ class TrainableGeneSetLayer(nn.Module):
             torch.zeros_like(cumsum_pos)  # 假值填充
         )
         # 计算负集累积分布
-        neg_indicators = sorted_indicators<0.1
+        neg_indicators = sorted_indicators<self.geneset_threshold
+        # neg_indicators = sorted_indicators<torch.sigmoid(self.geneset_threshold)
         if mask is not None:
             # 高效生成排序后的基因掩码
             batch_size = R.shape[0]

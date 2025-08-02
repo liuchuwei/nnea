@@ -260,6 +260,7 @@ class AttentionBlock(nn.Module):
         self.key = nn.Linear(input_dim, input_dim)
         self.value = nn.Linear(input_dim, input_dim)
         self.gamma = nn.Parameter(torch.zeros(1))  # 可学习的残差权重
+        self.last_attention_weights = None  # 存储最后一次的注意力权重
 
     def forward(self, x):
         # x shape: [Batch, Sequence, Features] → 需调整为特征维度
@@ -273,6 +274,9 @@ class AttentionBlock(nn.Module):
         # 计算注意力分数
         scores = torch.bmm(Q, K.transpose(1, 2))  # [B, Seq, Seq]
         attn_weights = F.softmax(scores, dim=-1)  # 归一化权重
+        
+        # 存储注意力权重
+        self.last_attention_weights = attn_weights
 
         # 加权聚合特征
         context = torch.bmm(attn_weights, V)  # [B, Seq, D]
@@ -280,6 +284,13 @@ class AttentionBlock(nn.Module):
         # 残差连接 + 特征压缩回原始维度
         output = self.gamma * context + x
         return output.squeeze(1)  # 移除序列维度 → [B, D]
+    
+    def get_attention_weights(self):
+        """获取注意力权重"""
+        if self.last_attention_weights is not None:
+            return self.last_attention_weights
+        else:
+            return torch.zeros(1)  # 返回占位符
 def BuildClassifier(config, input_dim):
 
     if config['classifier_name'] == "linear":

@@ -25,8 +25,7 @@ def flatten_dict(nested_dict, parent_key='', sep='.'):
     """
     flattened = {}
     for key, value in nested_dict.items():
-        # new_key = f"{parent_key}{sep}{key}" if parent_key else key
-        new_key = key
+        new_key = f"{parent_key}{sep}{key}" if parent_key else key
         if isinstance(value, dict):
             flattened.update(flatten_dict(value, new_key, sep))
         else:
@@ -250,12 +249,13 @@ class Loader(object):
         self.split_dataset(base_dataset, targets)
 
     def split_dataset(self, base_dataset, targets):
-
+        """
+        分割数据集并保存索引到nadata的Model容器中
+        """
         n_samples = base_dataset[0].shape[0]
         indices = np.arange(n_samples)
 
         stratify = targets if self.global_config['task'] == 'classification' else None
-
 
         train_idx, test_idx = train_test_split(
             indices,
@@ -296,7 +296,6 @@ class Loader(object):
                 *[tensor[train_idx] for tensor in base_dataset]
             )
 
-
         # 创建测试集loader（不洗牌）
         # self.test_loader = torch.utils.data.DataLoader(
         #     test_dataset,
@@ -305,7 +304,6 @@ class Loader(object):
         # )
         self.test_dataset = test_dataset
         # 保存测试集索引
-        self.test_indices = test_idx
 
         # 生成交叉验证划分
         if self.global_config['train_mod'] == "cross_validation":
@@ -349,6 +347,21 @@ class Loader(object):
                 )
                 self.train_indices = train_idx
                 self.val_indices = val_idx
+        
+        # 保存索引到nadata的Model容器中（如果nadata对象可用）
+        if hasattr(self, 'nadata') and self.nadata is not None:
+            # 获取原始索引（相对于原始数据）
+            original_train_idx = train_idx
+            original_test_idx = test_idx
+            original_val_idx = val_idx if 'val_idx' in locals() else None
+            
+            # 保存到Model容器
+            self.nadata.Model.set_indices(
+                train_idx=original_train_idx.tolist() if hasattr(original_train_idx, 'tolist') else original_train_idx,
+                test_idx=original_test_idx.tolist() if hasattr(original_test_idx, 'tolist') else original_test_idx,
+                val_idx=original_val_idx.tolist() if original_val_idx is not None and hasattr(original_val_idx, 'tolist') else original_val_idx
+            )
+
     def split_cross_validation(self, base_dataset, targets=None):
         """生成交叉验证数据划分"""
         n_samples =  len(base_dataset)

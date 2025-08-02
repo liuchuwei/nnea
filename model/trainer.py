@@ -23,7 +23,7 @@ class OneSplitTrainer(object):
         self.loader = loader
         self.train_loader = {"train": loader.train_dataset, "valid":loader.val_dataset, "targets":loader.targets}
 
-    def train(self):
+    def train(self, verbose=1):
 
         params = {
             "lr" : self.model_config['lr'],
@@ -33,12 +33,12 @@ class OneSplitTrainer(object):
             "batch_size" : self.model_config['batch_size'],
         }
 
-
-        print(f"\nEvaluating hyperparameters: {params}")
+        if verbose >= 1:
+            print(f"\nEvaluating hyperparameters: {params}")
 
         final_model = LoadModel(self.model_config, self.loader)
         final_trainer = Trainer(self.model_config, final_model, self.train_loader)
-        final_trainer.train()
+        final_trainer.train(verbose=verbose)
         checkpoint = torch.load(final_trainer.checkpoint_path)
         final_trainer.model.load_state_dict(checkpoint)
         test_loader = torch.utils.data.DataLoader(
@@ -63,13 +63,13 @@ class CrossTrainer(object):
         self.best_params = None  # 存储最佳参数
         self.best_score = -float('inf')  # 存储最佳得分
 
-    def train_single_model(self, fold_data):
+    def train_single_model(self, fold_data, verbose=1):
 
         model = LoadModel(self.model_config, self.loader)
 
         # 创建Trainer并训练
         trainer = Trainer(self.model_config, model, fold_data)
-        trainer.train()
+        trainer.train(verbose=verbose)
 
         # 返回验证集性能
         return trainer.get_validation_metric()
@@ -83,7 +83,7 @@ class CrossTrainer(object):
         } for r in results])
         df.to_csv(os.path.join(self.model_config['checkpoint_dir'], 'cv_results.csv'), index=False)
 
-    def train(self):
+    def train(self, verbose=1):
 
         param_grid = {
             "lr" : self.model_config['lr'],
@@ -98,12 +98,13 @@ class CrossTrainer(object):
         results = []
 
         for params in param_samples:
-            print(f"\nEvaluating hyperparameters: {params}")
+            if verbose >= 1:
+                print(f"\nEvaluating hyperparameters: {params}")
             fold_scores = []
             self.model_config.update(params)
             for item in self.loader.cv_loaders:
 
-                score = self.train_single_model(item)
+                score = self.train_single_model(item, verbose=verbose)
                 fold_scores.append(score)
 
             avg_score = np.mean(fold_scores)
@@ -115,14 +116,16 @@ class CrossTrainer(object):
                 self.best_score = avg_score
                 self.best_params = params
                 best_fold = np.argmax(fold_scores)
-                print(f"🔥 New best params! Score: {avg_score:.4f}")
+                if verbose >= 1:
+                    print(f"🔥 New best params! Score: {avg_score:.4f}")
 
-        print(f"\n🚀 Training final model with best params: {self.best_params}")
+        if verbose >= 1:
+            print(f"\n🚀 Training final model with best params: {self.best_params}")
         self.model_config.update(self.best_params)
         self.model_config['train_mod'] = "one_split"
         final_model = LoadModel(self.model_config, self.loader)
         final_trainer = Trainer(self.model_config, final_model, self.loader.cv_loaders[best_fold])
-        final_trainer.train()
+        final_trainer.train(verbose=verbose)
         checkpoint = torch.load(final_trainer.checkpoint_path)
         final_trainer.model.load_state_dict(checkpoint)
         test_loader = torch.utils.data.DataLoader(
@@ -189,7 +192,7 @@ class ML_Trainer(object):
         })
         results_df.to_csv(os.path.join(self.config['checkpoint_dir'], "predictions.csv"), index=False)
 
-    def train(self):
+    def train(self, verbose=1):
 
         if self.config['train_mod'] == "cross_validation":
             searcher = RandomizedSearchCV(
@@ -199,7 +202,7 @@ class ML_Trainer(object):
                 cv=self.loader.cv,
                 scoring=self.config["scoring"],
                 n_jobs=-self.config['n_jobs'],
-                verbose=self.config['verbose'],
+                verbose=verbose if verbose >= 1 else 0,
                 random_state=self.config['seed']
             )
 
@@ -213,7 +216,8 @@ class ML_Trainer(object):
         elif self.config['train_mod'] == "one_split":
             self.model.fit(self.loader.X_train, self.loader.y_train)
             test_metrics, test_pred = self.evaluate_model(self.model, self.loader.X_test, self.loader.y_test)
-            print(classification_report(self.loader.y_test, test_pred))
+            if verbose >= 1:
+                print(classification_report(self.loader.y_test, test_pred))
 
 
 class Trainer(object):
@@ -228,7 +232,7 @@ class Trainer(object):
             self.init_nnea()
 
     def init_nnea(self):
-        # self.loader = self.loader.torch_loader
+        # self.io = self.io.torch_loader
 
         self.train_loader = torch.utils.data.DataLoader(
             self.loader['train'],
@@ -444,7 +448,7 @@ class Trainer(object):
         self.model.eval()
         total_loss = 0.0
 
-        # for batch_R, batch_S, batch_y in self.loader:
+        # for batch_R, batch_S, batch_y in self.io:
         for batch_data in loader:
             device = self.config['device']
             batch_R, batch_S = batch_data[0].to(device), batch_data[1].to(
@@ -472,7 +476,7 @@ class Trainer(object):
         self.model.train()
         total_loss = 0.0
 
-        # for batch_R, batch_S, batch_y in self.loader:
+        # for batch_R, batch_S, batch_y in self.io:
         for batch_data in self.train_loader:
 
             device = self.config['device']
@@ -559,71 +563,124 @@ class Trainer(object):
                 self.save_checkpoint(epoch)
 
         return improved
-    def print_process(self, epoch, task_loss, reg_loss, avg_loss):
+    def print_process(self, epoch, task_loss, reg_loss, avg_loss, verbose=1):
 
         if self.config['task'] in ['classification']:
+            # verbose 0: 只显示进度条，不打印详细信息
+            if verbose == 0:
+                return
+                
+            # verbose 1: 显示基本信息
+            if verbose == 1:
+                info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                      f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                      f"Train accuracy: {self.accuracy:.4f} "
+                      f"Train macro f1: {self.macro_f1:.4f}, "
+                      f"Train weighted f1: {self.weighted_f1:.4f}, "
+                      f"Train roc_auc: {self.roc_auc:.4f}, "
+                      )
+                self.evaluate(loader=self.valid_loader)
 
-            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
-                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Train accuracy: {self.accuracy:.4f} "
-                  f"Train macro f1: {self.macro_f1:.4f}, "
-                  f"Train weighted f1: {self.weighted_f1:.4f}, "
-                  f"Train roc_auc: {self.roc_auc:.4f}, "
-                  )
-            self.evaluate(loader=self.valid_loader)
+                info += (f"Val accuracy: {self.accuracy:.4f}, "
+                      f"Val macro f1: {self.macro_f1:.4f}, "
+                      f"Val weighted f1: {self.weighted_f1:.4f}, "
+                         f"Val roc_auc: {self.roc_auc:.4f}")
 
-            info += (f"Val accuracy: {self.accuracy:.4f}, "
-                  f"Val macro f1: {self.macro_f1:.4f}, "
-                  f"Val weighted f1: {self.weighted_f1:.4f}, "
-                     f"Val roc_auc: {self.roc_auc:.4f}")
-
-            print(info)
+                print(info)
+            
+            # verbose 2: 显示详细评估结果
+            if verbose >= 2:
+                self.evaluate(loader=self.valid_loader)
+                print(f"Epoch {epoch + 1}: Train Loss = {avg_loss:.4f}, Val Loss = {self.accuracy:.4f}, Reg Loss = {reg_loss.item():.4f}, train_acc={self.accuracy:.4f}, train_auc={self.roc_auc:.4f}, train_f1={self.weighted_f1:.4f}, train_prec={self.accuracy:.4f}, train_recall={self.accuracy:.4f}, val_acc={self.accuracy:.4f}, val_auc={self.roc_auc:.4f}, val_f1={self.weighted_f1:.4f}, val_prec={self.accuracy:.4f}, val_recall={self.accuracy:.4f}")
 
         elif self.config['task'] in ['cox']:
+            # verbose 0: 只显示进度条，不打印详细信息
+            if verbose == 0:
+                return
+                
+            # verbose 1: 显示基本信息
+            if verbose == 1:
+                info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                      f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                      f"Train diff risk: {self.accuracy:.4f}, "
+                      f"Train high risk: {self.high_risk:.4f}, Train low risk: {self.low_risk:.4f}, ")
 
-            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
-                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Train diff risk: {self.accuracy:.4f}, "
-                  f"Train high risk: {self.high_risk:.4f}, Train low risk: {self.low_risk:.4f}, ")
+                self.evaluate(loader=self.valid_loader)
 
-            self.evaluate(loader=self.valid_loader)
+                info += (
+                      f"Val diff risk: {self.accuracy:.4f}, "
+                      f"Val high risk: {self.high_risk:.4f}, Val low risk: {self.low_risk:.4f}")
 
-            info += (
-                  f"Val diff risk: {self.accuracy:.4f}, "
-                  f"Val high risk: {self.high_risk:.4f}, Val low risk: {self.low_risk:.4f}")
-
-            print(info)
+                print(info)
+            
+            # verbose 2: 显示详细评估结果
+            if verbose >= 2:
+                self.evaluate(loader=self.valid_loader)
+                print(f"Epoch {epoch + 1}: Train Loss = {avg_loss:.4f}, Val Loss = {self.accuracy:.4f}, Reg Loss = {reg_loss.item():.4f}, train_diff_risk={self.accuracy:.4f}, train_high_risk={self.high_risk:.4f}, train_low_risk={self.low_risk:.4f}, val_diff_risk={self.accuracy:.4f}, val_high_risk={self.high_risk:.4f}, val_low_risk={self.low_risk:.4f}")
 
 
         elif self.config['task'] in ['regression']:
-            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
-                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Train mse: {self.mse:.4f}, Train mae: {self.mae:.4f}, Train pcc: {self.pearson:.4f}, ")
+            # verbose 0: 只显示进度条，不打印详细信息
+            if verbose == 0:
+                return
+                
+            # verbose 1: 显示基本信息
+            if verbose == 1:
+                info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                      f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                      f"Train mse: {self.mse:.4f}, Train mae: {self.mae:.4f}, Train pcc: {self.pearson:.4f}, ")
 
-            self.evaluate(loader=self.valid_loader)
-            info += (f"Val mse: {self.mse:.4f}, Val mae: {self.mae:.4f}, Val pcc: {self.pearson:.4f}")
+                self.evaluate(loader=self.valid_loader)
+                info += (f"Val mse: {self.mse:.4f}, Val mae: {self.mae:.4f}, Val pcc: {self.pearson:.4f}")
 
-            print(info)
+                print(info)
+            
+            # verbose 2: 显示详细评估结果
+            if verbose >= 2:
+                self.evaluate(loader=self.valid_loader)
+                print(f"Epoch {epoch + 1}: Train Loss = {avg_loss:.4f}, Val Loss = {self.mse:.4f}, Reg Loss = {reg_loss.item():.4f}, train_mse={self.mse:.4f}, train_mae={self.mae:.4f}, train_pearson={self.pearson:.4f}, val_mse={self.mse:.4f}, val_mae={self.mae:.4f}, val_pearson={self.pearson:.4f}")
 
         elif self.config['task'] in ['autoencoder']:
-            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
-                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Train rec Loss: {self.recon_loss:.4f}, ")
+            # verbose 0: 只显示进度条，不打印详细信息
+            if verbose == 0:
+                return
+                
+            # verbose 1: 显示基本信息
+            if verbose == 1:
+                info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                      f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                      f"Train rec Loss: {self.recon_loss:.4f}, ")
 
-            self.evaluate(loader=self.valid_loader)
-            info += (f"Train rec Loss: {self.recon_loss:.4f}")
-            print(info)
+                self.evaluate(loader=self.valid_loader)
+                info += (f"Train rec Loss: {self.recon_loss:.4f}")
+                print(info)
+            
+            # verbose 2: 显示详细评估结果
+            if verbose >= 2:
+                self.evaluate(loader=self.valid_loader)
+                print(f"Epoch {epoch + 1}: Train Loss = {avg_loss:.4f}, Val Loss = {self.recon_loss:.4f}, Reg Loss = {reg_loss.item():.4f}, train_recon_loss={self.recon_loss:.4f}, val_recon_loss={self.recon_loss:.4f}")
 
         elif self.config['task'] in ['umap']:
-            info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
-                  f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
-                  f"Silhouette Loss: {self.silhouette_loss:.4f}, ")
+            # verbose 0: 只显示进度条，不打印详细信息
+            if verbose == 0:
+                return
+                
+            # verbose 1: 显示基本信息
+            if verbose == 1:
+                info = (f"Epoch {epoch + 1}/{self.config['num_epochs']}, Loss: {avg_loss:.4f}, "
+                      f"Task Loss: {task_loss.item():.4f}, Reg Loss: {reg_loss.item():.4f}, "
+                      f"Silhouette Loss: {self.silhouette_loss:.4f}, ")
 
-            self.evaluate(loader=self.valid_loader)
-            info += (f"Silhouette Loss: {self.silhouette_loss:.4f}")
-            print(info)
+                self.evaluate(loader=self.valid_loader)
+                info += (f"Silhouette Loss: {self.silhouette_loss:.4f}")
+                print(info)
+            
+            # verbose 2: 显示详细评估结果
+            if verbose >= 2:
+                self.evaluate(loader=self.valid_loader)
+                print(f"Epoch {epoch + 1}: Train Loss = {avg_loss:.4f}, Val Loss = {self.silhouette_loss:.4f}, Reg Loss = {reg_loss.item():.4f}, train_silhouette_loss={self.silhouette_loss:.4f}, val_silhouette_loss={self.silhouette_loss:.4f}")
 
-    def train(self):
+    def train(self, verbose=1):
 
         # 初始化早停相关变量（同时监控训练损失和验证指标）
         self.best_metric = -float('inf') if self.config['task'] in ['classification', 'cox'] else float('inf')
@@ -631,14 +688,27 @@ class Trainer(object):
         self.patience_counter_metric = 0  # 验证指标无改善的计数器
         self.patience_counter_loss = 0  # 训练损失无改善的计数器
 
-        for epoch in range(self.config['num_epochs']):
+        # 导入tqdm用于进度条
+        try:
+            from tqdm import tqdm
+            use_tqdm = True
+        except ImportError:
+            use_tqdm = False
+
+        # 创建进度条（只有verbose=0时显示）
+        if verbose == 0 and use_tqdm:
+            pbar = tqdm(range(self.config['num_epochs']), desc="训练进度")
+        else:
+            pbar = range(self.config['num_epochs'])
+
+        for epoch in pbar:
 
             avg_loss, task_loss, reg_loss = self.one_epoch()
             self.evaluate(loader=self.train_loader)
             self.scheduler.step(avg_loss)
 
             # 打印训练信息
-            self.print_process(epoch, task_loss, reg_loss, avg_loss)
+            self.print_process(epoch, task_loss, reg_loss, avg_loss, verbose)
 
             # 关键修改：同时监控训练损失和验证指标
             improved_metric = self.save_model(epoch=(epoch + 1))  # 验证指标是否提升
