@@ -1,0 +1,45 @@
+[gobal]
+    seed = 888888888
+    device = "cuda"
+    dataset = 'laptinib_tumor_drug'
+    task = "tumor_drug" # tumor_sur, cell_class, tumor_drug
+    model = "nnea"
+
+[piror_knowldege]
+    use_piror_knowldege = false
+    piror_path = "data/genesets/c1.all.v2025.1.Hs.symbols.gmt"
+    freeze_prior = false
+
+[geneset_layer]
+    geneset_layer_mode = "one_mode" # one_mode; deep_mod
+    use_piror_knowldege = false
+    geneset_layer_alpha = 0.25
+    num_sets = 20
+    set_min_size = 10
+    set_max_size = 50
+
+[deep_mod]
+    geneset_layers = 2
+    sub_num_genesets = 10
+
+[classifier]
+    classifier_name = 'linear' # linear or attention
+    hidden_dims = [128, 64, 32]
+    output_dim = 2
+    classifier_dropout = [0.4, 0.3]
+
+
+[optimizer]
+    lr = 0.001
+    opt = "adam"
+    opt_scheduler = "reduce"
+    opt_factor = 0.5
+    opt_patience = 5
+    weight_decay = 1e-5
+
+[trainer]
+    batch_size = 64
+    num_epochs = 10000
+
+
+

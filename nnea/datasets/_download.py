@@ -33,92 +33,79 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 def download(dataset: str, output_dir: str) -> None:
-
     """
-    Download datasets
-    :param dataset: name of the dataset
-    :param output_dir: directory to save the dataset
+    下载数据集
+    :param dataset: 数据集名称
+    :param output_dir: 保存数据集的目录
     :return: None
     """
 
     if not dataset:
-        raise ValueError("dataset is required")
+        raise ValueError("dataset参数不能为空")
 
     if not output_dir:
-        raise ValueError("output_dir is required")
+        raise ValueError("output_dir参数不能为空")
 
     ## imm_melanoma
     if dataset == "imm_melanoma":
-
-        exp_url = "https://figshare.com/ndownloader/files/56528579"
-        phe_url = "https://figshare.com/ndownloader/files/56528576"
-        exp_fl = os.path.join(output_dir, "imm_melanoma_exp.txt")
-        phe_fl = os.path.join(output_dir, "imm_melanoma_phe.txt")
-
-        if not os.path.exists(output_dir) & os.path.exists(exp_fl) & os.path.exists(phe_fl):
-            logger.info("Downloading melanoma immunotherapy dataset...")
-        else:
-            logger.info("Datset already downloaded...")
+        nadata_url = "https://figshare.com/ndownloader/files/56852135"
+        nadata_fl = os.path.join(output_dir, "imm_melanoma_exp.txt")
 
         if not os.path.exists(output_dir):
-
-            logger.info(f"Creating output directory {output_dir}")
+            logger.info(f"正在创建输出目录 {output_dir}")
             os.mkdir(output_dir)
 
-        if not os.path.exists(exp_fl):
-            request_fl_through_url(exp_url, exp_fl)
+        if not os.path.exists(nadata_fl):
+            logger.info("正在下载melanoma数据集...")
+            request_fl_through_url(nadata_url, nadata_fl)
+        else:
+            logger.info("melanoma数据集已存在，无需重复下载。")
 
-        if not os.path.exists(phe_fl):
-            request_fl_through_url(phe_url, phe_fl)
+
 
     ## imm_bladder
     elif dataset == "imm_bladder":
-
-        logger.info("Downloading bladder immunotherapy dataset...")
-        exp_url = "https://figshare.com/ndownloader/files/56528570"
-        phe_url = "https://figshare.com/ndownloader/files/56540711"
-        exp_fl = os.path.join(output_dir, "imm_bladder_exp.txt")
-        phe_fl = os.path.join(output_dir, "imm_bladder_phe.txt")
+        nadata_url = "https://figshare.com/ndownloader/files/56852129"
+        nadata_fl = os.path.join(output_dir, "imm_bladder_exp.txt")
 
         if not os.path.exists(output_dir):
-            logger.info(f"Creating output directory {output_dir}")
+            logger.info(f"正在创建输出目录 {output_dir}")
             os.mkdir(output_dir)
 
-        if not os.path.exists(exp_fl):
-            request_fl_through_url(exp_url, exp_fl)
+        if not os.path.exists(nadata_fl):
+            logger.info("正在下载bladder数据集...")
+            request_fl_through_url(nadata_url, nadata_fl)
+        else:
+            logger.info("bladder数据集已存在，无需重复下载。")
 
-        if not os.path.exists(phe_fl):
-            request_fl_through_url(phe_url, phe_fl)
+
 
     ## imm_ccRCC
     elif dataset == "imm_ccRCC":
-
-        logger.info("Downloading ccRCC immunotherapy dataset...")
-        exp_url = "https://figshare.com/ndownloader/files/56528567"
-        phe_url = "https://figshare.com/ndownloader/files/56528573"
-
-        exp_fl = os.path.join(output_dir, "imm_ccRCC_exp.txt")
-        phe_fl = os.path.join(output_dir, "imm_ccRCC_phe.txt")
+        nadata_url = "https://figshare.com/ndownloader/files/56852132"
+        nadata_fl = os.path.join(output_dir, "imm_ccRCC_exp.txt")
 
         if not os.path.exists(output_dir):
-            logger.info(f"Creating output directory {output_dir}")
+            logger.info(f"正在创建输出目录 {output_dir}")
             os.mkdir(output_dir)
 
-        if not os.path.exists(exp_fl):
-            request_fl_through_url(exp_url, exp_fl)
+        if not os.path.exists(nadata_fl):
+            logger.info("正在下载ccRCC数据集...")
+            request_fl_through_url(nadata_url, nadata_fl)
+        else:
+            logger.info("ccRCC数据集已存在，无需重复下载。")
 
-        if not os.path.exists(phe_fl):
-            request_fl_through_url(phe_url, phe_fl)
+
 
     else:
-        logger.error(f"Dataset {dataset} not supported！")
+        logger.error(f"暂不支持的数据集: {dataset}！")
 
 
 def request_fl_through_url(url=None, output_file=None):
     """
-    Download file through url with progress bar and resume support
-    :param url: file's url to request
-    :param output_file: path of output file
+    通过url下载文件，支持进度条和断点续传
+    :param url: 文件下载链接
+    :param output_file: 输出文件路径
     :return: None
     """
 
@@ -140,7 +127,7 @@ def request_fl_through_url(url=None, output_file=None):
             url,
             headers={**headers, **resume_header},
             stream=True,
-            timeout=30,# 添加代理参数
+            timeout=30,
         )
         response.raise_for_status()
 
@@ -151,7 +138,7 @@ def request_fl_through_url(url=None, output_file=None):
         else:
             total_size = int(response.headers.get('content-length', 0)) or None
 
-        # 初始化进度条（核心添加部分）
+        # 初始化进度条
         progress_bar = tqdm(
             total=total_size,
             unit='B',
@@ -165,9 +152,7 @@ def request_fl_through_url(url=None, output_file=None):
         # 文件写入模式（续传时追加）
         mode = "ab" if resume_header and response.status_code == 206 else "wb"
 
-
         with open(output_file, mode) as f:
-
             for chunk in response.iter_content(chunk_size=8192):
                 if initial_bytes > 0:  # 续传时丢弃第一个不完整分块
                     chunk = chunk[initial_bytes % 8192:]
@@ -177,12 +162,12 @@ def request_fl_through_url(url=None, output_file=None):
                     progress_bar.update(len(chunk))  # 更新进度条
 
         progress_bar.close()  # 确保关闭进度条
-        logger.info(f"File saved to: {output_file}")
+        logger.info(f"文件已保存至: {output_file}")
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Download failed: {e}")
+        logger.error(f"下载失败: {e}")
 
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"发生未知错误: {e}")
         if 'progress_bar' in locals():
             progress_bar.close()

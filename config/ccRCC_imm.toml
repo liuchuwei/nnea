@@ -1,0 +1,56 @@
+[global]
+task = "classification"
+model = "nnea"
+device = "cuda"
+seed = 42
+
+[dataset]
+path = "datasets/imm_ccRCC"
+exp_file = "imm_ccRCC_exp.txt"
+phe_file = "imm_ccRCC_phe.txt"
+target_column = "class"
+test_size = 0.2
+val_size = 0.2
+random_state = 42
+
+[nnea]
+use_prior_knowledge = false
+prior_knowledge = "data/genesets/c1.all.v2025.1.Hs.symbols.gmt"
+prior_path = "data/genesets/c1.all.v2025.1.Hs.symbols.gmt"
+freeze_prior = true
+num_genesets = 20
+hidden_dims = "" # [512, 256, 128]
+dropout = 0.3
+activation = "relu"
+
+[geneset_layer]
+min_set_size = 10
+max_set_size = 50
+use_attention = false
+attention_dim = 32
+dropout = 0.3
+num_fc_layers = 0
+geneset_threshold = 0.0
+
+[training]
+epochs = 100
+batch_size = 32
+learning_rate = 0.001
+weight_decay = 0.0001
+regularization_weight = 0.1
+early_stopping_patience = 10
+save_best = true
+save_path = "checkpoints/ccrcc_imm_model.pt"
+
+[evaluation]
+metrics = ["accuracy", "auc", "f1", "precision", "recall"]
+test_split = "test"
+
+[explanation]
+method = "importance"
+top_k = 20
+geneset_threshold = 0.5
+
+[visualization]
+save_path = "results"
+dpi = 300
