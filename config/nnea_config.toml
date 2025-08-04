@@ -4,7 +4,7 @@
     model = "nnea"
     device = "auto"  # 自动检测GPU/CPU
     seed = 42
-    outdir = "experiment/bladder_imm"
+    outdir = "experiment/melanoma_imm"
 
 # 数据集配置
 [dataset]

@@ -1,0 +1,57 @@
+# DecisionTreeClassifier模型配置文件
+# 全局配置
+[global]
+    model = "decision_tree"
+    device = "auto"  # 自动检测GPU/CPU
+    seed = 42
+    outdir = "experiment/tumor_imm/ccRCC_imm"
+
+# 数据集配置
+[dataset]
+    test_size = 0.2
+    val_size = 0.2
+    random_state = 42
+
+# DecisionTreeClassifier模型配置
+[decision_tree]
+    # 基础参数
+    criterion = ["gini", "entropy", "log_loss"]  # 分裂标准
+    max_depth = [null, 3, 5, 10, 20]  # 最大深度
+    min_samples_split = [2, 5, 10]  # 分裂所需的最小样本数
+    min_samples_leaf = [1, 2, 4]  # 叶节点最小样本数
+    max_features = [null, "sqrt", "log2"]  # 最大特征数
+    
+    # 其他可选参数
+    random_state = 42  # 随机种子
+    class_weight = "balanced"  # 类别权重
+    
+    # 交叉验证配置
+    cv_folds = 5  # 交叉验证折数
+    cv_scoring = "roc_auc"  # 评估指标
+    n_jobs = 8  # 并行作业数，-1表示使用所有CPU核心
+    
+    # 特征选择配置
+    feature_selection = true
+    selection_method = "lasso"
+    n_features = 100
+    selection_alpha = 0.01
+    
+    # 数据预处理配置
+    [decision_tree.preprocessing]
+        fill_na = true
+        fill_method = "mean"
+        scale_data = true
+        scale_method = "standard"
+
+# 训练配置
+[training]
+    verbose = 1
+    save_model = true
+    save_format = "pickle"
+    save_data = true
+
+# 评估配置
+[evaluation]
+    metrics = ["roc_auc", "classification_report"]
+    save_predictions = true
+    save_probabilities = true 

@@ -43,10 +43,10 @@ class TumorSurvivalProcessor:
         self.results = {}
         
         # 数据文件路径
-        self.tumor_exp_path = "../data/tumor/tcga/Tumor-25.01-Polya_hugo_log2tpm_58581genes_2025-02-27.tsv"
-        self.hugo_geneset_path = "../data/hugo_2025.txt"
-        self.sur_dat_path = "../data/tumor/tcga/TCGA_survival_data_2.txt"
-        self.phenotype_path = "../data/tumor/tcga/TCGA_TARGET_phenotype.txt"
+        self.tumor_exp_path = "../../data/tumor/tcga/Tumor-25.01-Polya_hugo_log2tpm_58581genes_2025-02-27.tsv"
+        self.hugo_geneset_path = "../../data/hugo_2025.txt"
+        self.sur_dat_path = "../../data/tumor/tcga/TCGA_survival_data_2.txt"
+        self.phenotype_path = "../../data/tumor/tcga/TCGA_TARGET_phenotype.txt"
         
         # 检查文件是否存在
         self._check_files()
@@ -278,7 +278,7 @@ class TumorSurvivalProcessor:
         safe_name = cohort_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
         safe_name = ''.join(c for c in safe_name if c.isalnum() or c in '_-')
         
-        output_dir = "../datasets/tumor_survival"
+        output_dir = "../../datasets/tumor_survival"
         os.makedirs(output_dir, exist_ok=True)
         
         # 保存为pickle格式
@@ -323,7 +323,7 @@ def load_tumor_survival_data(cohort_name=None):
     Returns:
         dict: 肿瘤数据字典
     """
-    output_dir = "../datasets/tumor_survival"
+    output_dir = "../../datasets/tumor_survival"
     
     if not os.path.exists(output_dir):
         raise FileNotFoundError(f"数据目录不存在: {output_dir}")

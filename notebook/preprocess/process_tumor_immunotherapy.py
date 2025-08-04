@@ -44,8 +44,8 @@ class TumorImmunotherapyProcessor:
         self.results = {}
         
         # 数据文件路径
-        self.data_path = "../data/tumor/immune_therapy"
-        self.output_path = "../datasets/tumor_imm"
+        self.data_path = "../../data/tumor/immune_therapy"
+        self.output_path = "../../datasets/tumor_imm"
         
         # 检查文件是否存在
         self._check_files()
@@ -80,7 +80,7 @@ class TumorImmunotherapyProcessor:
         """加载HUGO基因集"""
         print("加载HUGO基因集...")
         try:
-            self.hugo_geneset = pd.read_csv("../data/hugo_2025.txt", sep='\t')
+            self.hugo_geneset = pd.read_csv("../../data/hugo_2025.txt", sep='\t')
             print(f"  HUGO基因集形状: {self.hugo_geneset.shape}")
         except Exception as e:
             print(f"  警告: 无法加载HUGO基因集: {e}")
@@ -387,7 +387,7 @@ def load_tumor_immunotherapy_data(dataset_name=None):
     Returns:
         dict: 肿瘤数据字典
     """
-    output_dir = "../datasets/tumor_imm"
+    output_dir = "../../datasets/tumor_imm"
     
     if not os.path.exists(output_dir):
         raise FileNotFoundError(f"数据目录不存在: {output_dir}")

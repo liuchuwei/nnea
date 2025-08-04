@@ -26,7 +26,7 @@ class SingleCellProcessor:
     """单细胞数据处理类"""
     
     def __init__(self):
-        self.datasets_dir = "../datasets"
+        self.datasets_dir = "../../datasets"
         
     def load_h5_data(self, h5_path: str) -> Dict[str, Any]:
         """

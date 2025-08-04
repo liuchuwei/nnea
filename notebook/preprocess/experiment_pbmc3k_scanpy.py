@@ -32,10 +32,10 @@ plt.rcParams['savefig.pad_inches'] = 0.1
 
 # 创建结果目录
 results_file = '../datasets/sc_pbmc3k/pbmc3k_processed.h5ad'
-Path('../datasets/sc_pbmc3k').mkdir(parents=True, exist_ok=True)
+Path('../../datasets/sc_pbmc3k').mkdir(parents=True, exist_ok=True)
 
 # 检查数据目录是否存在
-data_path = "../data/single_cell/pbmc3k"
+data_path = "../../data/single_cell/pbmc3k"
 if not os.path.exists(data_path):
     print(f"错误：数据目录 {data_path} 不存在")
     exit(1)
@@ -313,7 +313,7 @@ try:
     print(report)
 
     # 保存报告
-    with open('../datasets/sc_pbmc3k/analysis_report.txt', 'w', encoding='utf-8') as f:
+    with open('../../datasets/sc_pbmc3k/analysis_report.txt', 'w', encoding='utf-8') as f:
         f.write(report)
     print("分析报告已保存")
 except Exception as e:
