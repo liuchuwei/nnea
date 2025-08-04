@@ -12,6 +12,81 @@ from typing import Any, Dict, List, Union, Optional
 from pathlib import Path
 import logging
 
+import random
+import torch
+
+logger = logging.getLogger(__name__)
+
+def set_global_seed(seed: int = 42, deterministic: bool = True) -> None:
+    """
+    设置全局随机种子，确保实验的可重复性
+    
+    Args:
+        seed: 随机种子值
+        deterministic: 是否使用确定性算法（可能影响性能但确保可重复性）
+    """
+    logger.info(f"设置全局随机种子: {seed}")
+    
+    # Python random
+    random.seed(seed)
+    
+    # NumPy random
+    np.random.seed(seed)
+    
+    # PyTorch random
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # 多GPU情况
+    
+    if deterministic:
+        # 设置PyTorch的确定性算法（可能影响性能但确保可重复性）
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        
+        # 设置环境变量以确保完全确定性
+        os.environ['PYTHONHASHSEED'] = str(seed)
+        os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+    
+    logger.info("全局随机种子设置完成")
+
+def get_seed_from_config(config: Dict[str, Any]) -> int:
+    """
+    从配置中获取随机种子
+    
+    Args:
+        config: 配置字典
+        
+    Returns:
+        随机种子值，如果未找到则返回默认值42
+    """
+    # 尝试从不同位置获取种子
+    seed = config.get('global', {}).get('seed', None)
+    if seed is None:
+        seed = config.get('seed', None)
+    if seed is None:
+        seed = config.get('dataset', {}).get('random_state', None)
+    if seed is None:
+        seed = config.get('training', {}).get('random_state', None)
+    
+    return seed if seed is not None else 42
+
+def ensure_reproducibility(config: Dict[str, Any], deterministic: bool = True) -> None:
+    """
+    确保实验的可重复性
+    
+    Args:
+        config: 配置字典
+        deterministic: 是否使用确定性算法
+    """
+    seed = get_seed_from_config(config)
+    set_global_seed(seed, deterministic)
+    
+    # 记录配置信息
+    logger.info(f"实验配置:")
+    logger.info(f"  随机种子: {seed}")
+    logger.info(f"  确定性模式: {deterministic}")
+    logger.info(f"  设备: {config.get('global', {}).get('device', 'auto')}")
+
 
 def save_results(results: Dict[str, Any], filepath: str, format: str = "json") -> None:
     """

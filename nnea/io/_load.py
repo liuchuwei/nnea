@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import logging
 import toml
-from typing import Optional, Union, Dict, Any
+from typing import Optional, Union, Dict, Any, List
 from ._nadata import nadata
 
 # 获取logger
@@ -369,7 +369,7 @@ def _load_from_file(file_path: str, nadata_obj):
     return nadata_obj
 
 
-def _load_gmt_file(gmt_path: str, gene_data: Optional[pd.DataFrame] = None) -> np.ndarray:
+def _load_gmt_file(gmt_path: str, gene_names: Optional[List[str]] = None) -> np.ndarray:
     """
     解析.gmt文件为基因集指示矩阵
     
@@ -377,18 +377,18 @@ def _load_gmt_file(gmt_path: str, gene_data: Optional[pd.DataFrame] = None) -> n
     -----------
     gmt_path : str
         GMT文件路径
-    gene_data : Optional[pd.DataFrame]
-        基因数据
+    gene_names : Optional[List[str]]
+        基因名称列表，用于匹配基因集
         
     Returns:
     --------
     np.ndarray
-        基因集指示矩阵
+        基因集指示矩阵，形状为 (num_genesets, num_genes)
     """
     pathways = []
     pathway_names = []
     
-    with open(gmt_path, 'r') as f:
+    with open(gmt_path, 'r', encoding='utf-8') as f:
         for line in f:
             items = line.strip().split('\t')
             if len(items) < 3:
@@ -400,31 +400,50 @@ def _load_gmt_file(gmt_path: str, gene_data: Optional[pd.DataFrame] = None) -> n
             pathway_names.append(pathway_name)
             pathways.append(pathway_genes)
     
-    # 获取基因列表
-    if gene_data is not None:
-        gene_names = gene_data.index.tolist() if hasattr(gene_data, 'index') else gene_data.iloc[:, 0].tolist()
-    else:
-        # 从所有基因集中收集唯一基因
+    logger.info(f"从GMT文件加载了 {len(pathways)} 个基因集")
+    
+    # 如果没有提供基因名称列表，从基因集中收集
+    if gene_names is None:
         all_genes = set()
         for pathway_genes in pathways:
             all_genes.update(pathway_genes)
         gene_names = list(all_genes)
+        logger.info(f"从基因集中收集到 {len(gene_names)} 个唯一基因")
+    else:
+        logger.info(f"使用提供的基因列表，包含 {len(gene_names)} 个基因")
     
     # 构建基因到索引的映射
     gene_to_idx = {gene: idx for idx, gene in enumerate(gene_names)}
     
     # 构建指示矩阵
-    indicator = np.zeros((len(pathways), len(gene_names)))
+    indicator = np.zeros((len(pathways), len(gene_names)), dtype=np.float32)
+    
+    # 统计匹配情况
+    total_matches = 0
+    geneset_matches = []
     
     for p_idx, genes in enumerate(pathways):
+        matches = 0
         for gene in genes:
             if gene in gene_to_idx:
-                indicator[p_idx, gene_to_idx[gene]] = 1
+                indicator[p_idx, gene_to_idx[gene]] = 1.0
+                matches += 1
+        geneset_matches.append(matches)
+        total_matches += matches
+    
+    # 记录匹配统计信息
+    avg_matches = total_matches / len(pathways) if pathways else 0
+    logger.info(f"基因集平均匹配基因数: {avg_matches:.1f}")
+    logger.info(f"总匹配基因数: {total_matches}")
+    
+    # 检查是否有完全匹配的基因集
+    perfect_matches = sum(1 for matches in geneset_matches if matches > 0)
+    logger.info(f"有匹配基因的基因集数量: {perfect_matches}/{len(pathways)}")
     
     return indicator
 
 
-def _load_prior_from_table(table_path: str, gene_data: Optional[pd.DataFrame] = None) -> np.ndarray:
+def _load_prior_from_table(table_path: str, gene_names: Optional[List[str]] = None) -> np.ndarray:
     """
     从表格文件加载先验知识
     
@@ -432,13 +451,13 @@ def _load_prior_from_table(table_path: str, gene_data: Optional[pd.DataFrame] = 
     -----------
     table_path : str
         表格文件路径
-    gene_data : Optional[pd.DataFrame]
-        基因数据
+    gene_names : Optional[List[str]]
+        基因名称列表，用于匹配基因集
         
     Returns:
     --------
     np.ndarray
-        先验知识矩阵
+        先验知识矩阵，形状为 (num_genesets, num_genes)
     """
     if table_path.endswith('.csv'):
         data = pd.read_csv(table_path)
@@ -470,39 +489,115 @@ def _load_prior_from_table(table_path: str, gene_data: Optional[pd.DataFrame] = 
     pathways = data[pathway_col].unique()
     genes = data[gene_col].unique()
     
+    logger.info(f"从表格文件加载了 {len(pathways)} 个基因集")
+    
+    # 如果没有提供基因名称列表，使用表格中的基因
+    if gene_names is None:
+        gene_names = list(genes)
+        logger.info(f"从表格中收集到 {len(gene_names)} 个唯一基因")
+    else:
+        logger.info(f"使用提供的基因列表，包含 {len(gene_names)} 个基因")
+    
+    # 构建基因到索引的映射
+    gene_to_idx = {gene: idx for idx, gene in enumerate(gene_names)}
+    
     # 构建指示矩阵
-    indicator = np.zeros((len(pathways), len(genes)))
+    indicator = np.zeros((len(pathways), len(gene_names)), dtype=np.float32)
     
-    pathway_to_idx = {pathway: idx for idx, pathway in enumerate(pathways)}
-    gene_to_idx = {gene: idx for idx, gene in enumerate(genes)}
+    # 统计匹配情况
+    total_matches = 0
+    geneset_matches = []
     
-    for _, row in data.iterrows():
-        pathway_idx = pathway_to_idx[row[pathway_col]]
-        gene_idx = gene_to_idx[row[gene_col]]
-        indicator[pathway_idx, gene_idx] = 1
+    for p_idx, pathway in enumerate(pathways):
+        pathway_genes = data[data[pathway_col] == pathway][gene_col].tolist()
+        matches = 0
+        for gene in pathway_genes:
+            if gene in gene_to_idx:
+                indicator[p_idx, gene_to_idx[gene]] = 1.0
+                matches += 1
+        geneset_matches.append(matches)
+        total_matches += matches
+    
+    # 记录匹配统计信息
+    avg_matches = total_matches / len(pathways) if pathways else 0
+    logger.info(f"基因集平均匹配基因数: {avg_matches:.1f}")
+    logger.info(f"总匹配基因数: {total_matches}")
+    
+    # 检查是否有完全匹配的基因集
+    perfect_matches = sum(1 for matches in geneset_matches if matches > 0)
+    logger.info(f"有匹配基因的基因集数量: {perfect_matches}/{len(pathways)}")
     
     return indicator
 
 
-def load_prior_knowledge(config: Dict[str, Any]) -> Optional[np.ndarray]:
+def load_piror_knowledge(config: Dict[str, Any], gene_names: Optional[List[str]] = None) -> Optional[np.ndarray]:
     """
     加载先验知识（基因集）
+    
+    Parameters:
+    -----------
+    config : Dict[str, Any]
+        配置字典
+    gene_names : Optional[List[str]]
+        基因名称列表，用于匹配基因集
+        
+    Returns:
+    --------
+    Optional[np.ndarray]
+        先验知识矩阵，形状为 (num_genesets, num_genes)
     """
-    prior_config = config.get('prior_knowledge', {})
-    if not prior_config:
+    piror_config = config.get('nnea', {}).get('piror_knowledge', {})
+    if not piror_config:
         logger.info("未配置先验知识")
         return None
     
-    geneset_file = prior_config.get('geneset_file')
-    if not geneset_file or not os.path.exists(geneset_file):
+    use_prior = piror_config.get('use_piror_knowledge', False)
+    if not use_prior:
+        logger.info("未启用先验知识")
+        return None
+    
+    geneset_file = piror_config.get('piror_path')
+    if not geneset_file:
+        logger.warning("未指定基因集文件路径")
+        return None
+    
+    if not os.path.exists(geneset_file):
         logger.warning(f"基因集文件不存在: {geneset_file}")
         return None
     
     try:
-        # 读取基因集文件
-        genesets = pd.read_csv(geneset_file, sep='\t')
-        logger.info(f"基因集已加载: {geneset_file}")
-        return genesets.values
+        # 根据文件类型加载基因集
+        if geneset_file.endswith('.gmt'):
+            # 加载GMT格式的基因集文件
+            prior_matrix = _load_gmt_file(geneset_file, gene_names)
+            logger.info(f"基因集已加载: {geneset_file}, 形状: {prior_matrix.shape}")
+        elif geneset_file.endswith(('.csv', '.txt', '.xlsx')):
+            # 加载表格格式的基因集文件
+            prior_matrix = _load_prior_from_table(geneset_file, gene_names)
+            logger.info(f"表格基因集已加载: {geneset_file}, 形状: {prior_matrix.shape}")
+        else:
+            logger.error(f"不支持的基因集文件格式: {geneset_file}")
+            return None
+        
+        # 验证先验知识矩阵
+        if prior_matrix is not None and prior_matrix.size > 0:
+            # 计算稀疏度
+            sparsity = 1.0 - np.sum(prior_matrix) / prior_matrix.size
+            logger.info(f"先验知识矩阵稀疏度: {sparsity:.3f}")
+            
+            # 检查是否有有效的基因集，并打印基因集大小范围
+            geneset_sizes = np.sum(prior_matrix, axis=1)
+            valid_genesets = np.sum(geneset_sizes > 0)
+            min_size = int(np.min(geneset_sizes)) if geneset_sizes.size > 0 else 0
+            max_size = int(np.max(geneset_sizes)) if geneset_sizes.size > 0 else 0
+            logger.info(f"基因集大小范围: 最小={min_size}, 最大={max_size}")
+            logger.info(f"有效基因集数量: {valid_genesets}/{prior_matrix.shape[0]}")
+
+            return prior_matrix
+        else:
+            logger.warning("先验知识矩阵为空")
+            return None
+            
     except Exception as e:
         logger.error(f"加载基因集失败: {e}")
         return None

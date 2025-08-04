@@ -114,75 +114,41 @@ class TrainableGeneSetLayer(nn.Module):
     """
 
     def __init__(self, num_genes, num_sets, min_set_size=10, max_set_size=50,
-                 alpha=0.25, num_fc_layers=0, is_deep_layer=False, layer_index=0,
-                 prior_knowledge=None, freeze_prior=True, geneset_dropout=0.3,
-                 use_attention=False, attention_dim=64, geneset_threshold=0.0):
+                 alpha=-1.0, num_fc_layers=0, is_deep_layer=False, layer_index=0,
+                 piror_knowledge=None, freeze_piror=True, geneset_dropout=0.3,
+                 attention_dim=64, geneset_threshold=1e-5):
         super().__init__()
         self.num_genes = num_genes
         self.num_sets = num_sets
-        self.alpha = nn.Parameter(torch.tensor(-1.0))
+        self.alpha = nn.Parameter(torch.tensor(alpha))
         self.is_deep_layer = is_deep_layer
         self.layer_index = layer_index
-        self.prior_knowledge = prior_knowledge
+        self.piror_knowledge = piror_knowledge
         self.num_fc_layers = num_fc_layers
         self.geneset_dropout = nn.Dropout(p=geneset_dropout)
-        self.use_attention = use_attention
         self.attention_dim = attention_dim
         self.temperature = nn.Parameter(torch.tensor(1.0), requires_grad=True)
-        self.geneset_threshold = 1e-5
+        self.geneset_threshold = geneset_threshold
+        self.freeze_piror = freeze_piror
 
         # 新增可配置参数
         self.size_reg_weight = nn.Parameter(torch.tensor(0.1))
         self.diversity_reg_weight = nn.Parameter(torch.tensor(0.5))
 
-        # 初始化成员关系矩阵
-        if not use_attention:
-            if prior_knowledge is not None:
-                assert prior_knowledge.shape[1] == num_genes
-                # 将0/1矩阵转换为大数值参数（sigmoid后接近0或1）
-                adjusted_prior = torch.zeros_like(prior_knowledge)
-                adjusted_prior[prior_knowledge > 0.5] = 3  # sigmoid(10) ≈ 1
-                adjusted_prior[prior_knowledge <= 0.5] = -3  # sigmoid(-10) ≈ 0
-
-                # 存储原始先验知识矩阵（不参与训练）
-                self.register_buffer("prior_mask", prior_knowledge.float())
-                # 可训练参数（允许微调时更新）
-                self.set_membership = nn.Parameter(adjusted_prior, requires_grad=not freeze_prior)
-            else:
-                self.set_membership = nn.Parameter(torch.randn(num_sets, num_genes))
-                self.prior_mask = None
-
+        # 处理先验知识
+        if piror_knowledge is not None:
+            self.register_buffer("piror_mask", piror_knowledge.float())
         else:
-            # 注意力模式：使用基因嵌入和查询向量
-            self.gene_embeddings = nn.Parameter(torch.randn(num_genes, attention_dim))
-            self.query_vectors = nn.Parameter(torch.randn(num_sets, attention_dim))
+            self.piror_mask = None
 
-            # 处理先验知识
-            if prior_knowledge is not None:
-                self.register_buffer("prior_mask", prior_knowledge.float())
-            else:
-                self.prior_mask = None
+        # 初始化成员关系矩阵
+        self.gene_embeddings = nn.Parameter(torch.randn(num_genes, attention_dim))
+        self.query_vectors = nn.Parameter(torch.randn(num_sets, attention_dim))
 
         # 设置稀疏性约束以控制基因集大小
         self.min_set_size = min_set_size
         self.max_set_size = max_set_size
 
-        # 构建全连接变换层（当num_fc_layers>0时）
-        if num_fc_layers > 0:
-            # 共享权重设计：所有基因集使用相同的变换层
-            self.fc_transform = self._build_fc_transform(num_genes, num_fc_layers)
-        else:
-            self.fc_transform = None
-
-    def _build_fc_transform(self, num_genes, num_layers):
-        """构建全连接变换模块"""
-        layers = []
-        for i in range(num_layers):
-            layers.append(nn.Linear(num_genes, num_genes))
-            # 最后一层不加激活函数（保持线性变换）
-            if i < num_layers - 1:
-                layers.append(nn.ReLU())
-        return nn.Sequential(*layers)
 
     def get_set_indicators(self, x=None):
         """
@@ -195,50 +161,34 @@ class TrainableGeneSetLayer(nn.Module):
         返回:
         - indicators: 基因集指示矩阵 (num_sets, num_genes)
         """
-        if self.use_attention:
-            # 计算注意力分数：查询向量与基因嵌入的点积
-            attn_scores = torch.matmul(self.query_vectors, self.gene_embeddings.t())
+        # 计算注意力分数：查询向量与基因嵌入的点积
+        attn_scores = torch.matmul(self.query_vectors, self.gene_embeddings.t())
 
-            # 应用温度缩放控制稀疏性
-            scaled_scores = attn_scores / torch.clamp(self.temperature, min=0.01)
+        # 应用温度缩放控制稀疏性
+        scaled_scores = attn_scores / torch.clamp(self.temperature, min=0.01)
 
-            # 使用sigmoid生成指示矩阵（保持稀疏性）
-            indicators = torch.sigmoid(scaled_scores)
+        # 使用sigmoid生成指示矩阵（保持稀疏性）
+        indicators = torch.sigmoid(scaled_scores)
 
-            # 应用先验知识约束
-            if self.prior_mask is not None:
-                indicators = indicators * self.prior_mask
+        # 应用先验知识约束
+        if self.piror_mask is not None:
+            indicators = indicators * self.piror_mask
 
-            # 应用dropout
-            indicators = self.geneset_dropout(indicators)
+        # 应用dropout
+        indicators = self.geneset_dropout(indicators)
 
-        else:
-            if self.fc_transform is not None and not (hasattr(self, 'freeze_prior') and self.freeze_prior and self.prior_knowledge is not None):
-                # 保留原始值直通（残差连接）以便必要时恢复原始行为
-                transformed = self.set_membership + 0.3*self.fc_transform(self.set_membership)
-            else:
-                transformed = self.set_membership
+        # 应用稀疏性约束
+        # 确保每个基因集达到最小大小
+        if not (self.piror_mask is not None and hasattr(self, 'freeze_piror') and self.freeze_piror):
+            avg_indicators = indicators.mean(dim=1, keepdim=True)
+            indicators = torch.where(
+                indicators < avg_indicators * 0.3,
+                indicators * 0.01,
+                indicators
+            )
 
-            # 基础成员关系矩阵
-            indicators = torch.sigmoid(transformed)
+        indicators = self.geneset_dropout(indicators)
 
-            if self.prior_mask is not None:
-                # 将先验知识作为硬性约束：非先验位置强制归零
-                indicators = indicators * self.prior_mask
-            else:
-                indicators = indicators
-
-            # 应用稀疏性约束
-            # 确保每个基因集达到最小大小
-            if not (self.prior_mask is not None and hasattr(self, 'freeze_prior') and self.freeze_prior):
-                avg_indicators = indicators.mean(dim=1, keepdim=True)
-                indicators = torch.where(
-                    indicators < avg_indicators * 0.3,
-                    indicators * 0.01,
-                    indicators
-                )
-
-            indicators = self.geneset_dropout(indicators)
         return indicators
 
     def regularization_loss(self):
@@ -248,7 +198,7 @@ class TrainableGeneSetLayer(nn.Module):
         # 获取基因指示矩阵
         indicators = self.get_set_indicators()
 
-        if self.prior_knowledge is None or not (hasattr(self, 'freeze_prior') and self.freeze_prior):
+        if self.piror_knowledge is None or not (hasattr(self, 'freeze_piror') and self.freeze_piror):
             # 计算每个基因集的"基因数"（期望值）
             set_sizes = torch.sum(indicators, dim=1)
 
@@ -257,6 +207,8 @@ class TrainableGeneSetLayer(nn.Module):
 
             # 约束2: 防止基因集过大
             size_max_loss = F.relu(set_sizes - self.max_set_size).mean()
+        else:
+            size_min_loss, size_max_loss = 0, 0
 
         # 约束3: 鼓励清晰的成员关系（二值化）
         safe_log = torch.log(torch.clamp(indicators, min=1e-8))
@@ -278,6 +230,47 @@ class TrainableGeneSetLayer(nn.Module):
             base_loss = 0.1 * size_min_loss + 0.1 * size_max_loss + 0.2 * entropy_loss + 0.5 * diversity_loss
 
         return base_loss
+
+    def get_geneset_parameters(self) -> Dict[str, torch.Tensor]:
+        """
+        获取基因集层的参数
+        
+        Returns:
+            基因集参数字典
+        """
+        params = {}
+        for name, param in self.named_parameters():
+            if 'gene_embeddings' in name or 'query_vectors' in name:
+                params[name] = param.data.clone()
+        return params
+    
+    def set_geneset_parameters(self, params: Dict[str, torch.Tensor], indices: torch.Tensor) -> None:
+        """
+        设置基因集层的参数（用于裁剪）
+        
+        Args:
+            params: 参数字典
+            indices: 要保留的基因集索引
+        """
+        for name, param in self.named_parameters():
+            if name in params:
+                if 'query_vectors' in name:
+                    # query_vectors是(num_sets, attention_dim)
+                    param.data = params[name][indices]
+                elif 'gene_embeddings' in name:
+                    # gene_embeddings是(num_genes, attention_dim)，不需要裁剪
+                    param.data = params[name]
+    
+    def update_num_sets(self, new_num_sets: int) -> None:
+        """
+        更新基因集数量
+        
+        Args:
+            new_num_sets: 新的基因集数量
+        """
+        self.num_sets = new_num_sets
+        # 重新初始化query_vectors
+        self.query_vectors = nn.Parameter(torch.randn(new_num_sets, self.attention_dim))
 
     def forward(self, R, S, mask=None):
         """
@@ -486,18 +479,18 @@ class BiologicalConstraintLayer(nn.Module):
     应用生物学先验知识约束
     """
     
-    def __init__(self, input_dim: int, prior_knowledge: Optional[torch.Tensor] = None):
+    def __init__(self, input_dim: int, piror_knowledge: Optional[torch.Tensor] = None):
         """
         初始化生物学约束层
         
         Args:
             input_dim: 输入维度
-            prior_knowledge: 先验知识矩阵
+            piror_knowledge: 先验知识矩阵
         """
         super(BiologicalConstraintLayer, self).__init__()
         
         self.input_dim = input_dim
-        self.prior_knowledge = prior_knowledge
+        self.piror_knowledge = piror_knowledge
         
         # 约束权重
         self.constraint_weight = 0.1
@@ -513,9 +506,9 @@ class BiologicalConstraintLayer(nn.Module):
             约束后的输出
         """
         # 如果有先验知识，应用约束
-        if self.prior_knowledge is not None:
+        if self.piror_knowledge is not None:
             # 应用先验知识约束
-            constrained_x = x * self.prior_knowledge.unsqueeze(0)
+            constrained_x = x * self.piror_knowledge.unsqueeze(0)
             return constrained_x
         
         return x
@@ -527,16 +520,16 @@ class BiologicalConstraintLayer(nn.Module):
         Returns:
             约束损失
         """
-        if self.prior_knowledge is not None:
+        if self.piror_knowledge is not None:
             # 基于先验知识的约束损失
-            return self.constraint_weight * torch.norm(self.prior_knowledge, p=1)
+            return self.constraint_weight * torch.norm(self.piror_knowledge, p=1)
         return torch.tensor(0.0)
     
-    def set_prior_knowledge(self, prior_knowledge: torch.Tensor):
+    def set_piror_knowledge(self, piror_knowledge: torch.Tensor):
         """
         设置先验知识
         
         Args:
-            prior_knowledge: 先验知识矩阵
+            piror_knowledge: 先验知识矩阵
         """
-        self.prior_knowledge = prior_knowledge 
+        self.piror_knowledge = piror_knowledge 

@@ -162,11 +162,9 @@ class SingleCellProcessor:
         # 创建nadata对象
         na_data = nadata(
             X=data_dict['X'],
-            Meta=data_dict['Meta']
+            Meta=data_dict['Meta'],
+            uns=uns
         )
-        
-        # 添加uns属性
-        na_data.uns = uns
         
         # 保存数据
         os.makedirs(os.path.dirname(output_path), exist_ok=True)

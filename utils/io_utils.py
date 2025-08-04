@@ -289,7 +289,7 @@ class Loader(object):
             indices = torch.arange(n_samples, dtype=torch.long)
             rank_exp_tensor = torch.tensor(rank_exp_resampled.values, dtype=torch.float32)
             sort_exp_tensor = torch.tensor(sort_exp_resampled.copy(), dtype=torch.long)
-            train_dataset = (rank_exp_tensor, sort_exp_tensor, y_tensor, indices)
+            train_dataset = torch.utils.data.TensorDataset(rank_exp_tensor, sort_exp_tensor, y_tensor, indices)
 
         else:
             train_dataset = torch.utils.data.TensorDataset(

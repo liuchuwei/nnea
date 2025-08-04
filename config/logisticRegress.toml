@@ -1,0 +1,58 @@
+# LogisticRegression模型配置文件
+# 全局配置
+[global]
+    model = "logistic_regression"
+    device = "auto"  # 自动检测GPU/CPU
+    seed = 42
+    outdir = "experiment/melanoma_imm"
+
+# 数据集配置
+[dataset]
+    test_size = 0.2
+    val_size = 0.2
+    random_state = 42
+
+# LogisticRegression模型配置
+[logistic_regression]
+    # 基础参数
+    C = [0.01, 0.1, 1.0, 10.0, 100.0]  # 正则化强度的倒数
+    penalty = ["l1", "l2"]  # 正则化类型
+    solver = ["liblinear", "saga"]  # 优化算法
+    max_iter = [100, 200, 500]  # 最大迭代次数
+    
+    # 其他可选参数
+    tol = 1e-4  # 收敛容差
+    class_weight = "balanced"  # 类别权重
+    random_state = 42  # 随机种子
+    warm_start = false  # 是否使用前一次的解作为初始化
+    
+    # 交叉验证配置
+    cv_folds = 5  # 交叉验证折数
+    cv_scoring = "roc_auc"  # 评估指标
+    n_jobs = 8  # 并行作业数，-1表示使用所有CPU核心
+    
+    # 特征选择配置
+    feature_selection = true
+    selection_method = "lasso"
+    n_features = 100
+    selection_alpha = 0.01
+    
+    # 数据预处理配置
+    [logistic_regression.preprocessing]
+        fill_na = true
+        fill_method = "mean"
+        scale_data = true
+        scale_method = "standard"
+
+# 训练配置
+[training]
+    verbose = 1
+    save_model = true
+    save_format = "pickle"
+    save_data = true
+
+# 评估配置
+[evaluation]
+    metrics = ["roc_auc", "classification_report"]
+    save_predictions = true
+    save_probabilities = true 

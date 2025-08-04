@@ -15,12 +15,18 @@ def setup_logging(level='INFO', log_file=None, experiment_name=None):
     fmt = '%(asctime)s | %(levelname)s | %(message)s'
     datefmt = '%H:%M:%S'
     
-    # 创建日志目录
-    log_dir = "logs"
-    os.makedirs(log_dir, exist_ok=True)
-    
-    # 生成日志文件名
-    if log_file is None:
+    # 如果提供了log_file，使用指定的路径
+    if log_file is not None:
+        # 确保日志文件的目录存在
+        log_dir = os.path.dirname(log_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+    else:
+        # 创建默认日志目录
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # 生成日志文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if experiment_name:
             log_file = f"{log_dir}/{experiment_name}_{timestamp}.log"

@@ -101,7 +101,7 @@ class validation:
                 results['errors'].append(f"Found {prior_nan_count} NaN values in prior knowledge")
                 results['is_valid'] = False
             
-            results['summary']['prior_knowledge'] = {
+            results['summary']['piror_knowledge'] = {
                 'shape': prior_shape,
                 'nan_count': prior_nan_count
             }

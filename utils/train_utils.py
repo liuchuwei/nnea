@@ -191,7 +191,7 @@ def SetDevice(config):
     return config
 
 
-def BuildDeepGenesetLayer(config, prior_tensor = None):
+def BuildDeepGenesetLayer(config, piror_tensor = None):
     """
     Method to build deep geneset layer
 
@@ -203,10 +203,10 @@ def BuildDeepGenesetLayer(config, prior_tensor = None):
 
     for i in range(config['geneset_layers']):
         config['geneset_dropout'] = config['deep_dropout'][i]
-        if i == 0 and prior_tensor is not None:
+        if i == 0 and piror_tensor is not None:
             layer = TrainableGeneSetLayer(
                 num_genes=config['num_genes'],
-                num_sets=prior_tensor.shape[0],
+                num_sets=piror_tensor.shape[0],
                 min_set_size=config['set_min_size'],
                 max_set_size=config['set_max_size'],
                 alpha=config['alpha'],

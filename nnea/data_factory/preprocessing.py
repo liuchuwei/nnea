@@ -499,7 +499,7 @@ class pp:
         return nadata
     
     @staticmethod
-    def split_data(nadata, test_size: float = 0.2, val_size: float = 0.2, 
+    def split_data(nadata, test_size: float = 0.2,
                    random_state: int = 42, strategy: str = "random"):
         """
         数据划分
@@ -525,21 +525,17 @@ class pp:
         if nadata.X is None:
             return nadata
         
-        n_samples = nadata.X.shape[1]
+        n_samples = nadata.X.shape[0]
         indices = np.arange(n_samples)
         
         if strategy == "random":
             from sklearn.model_selection import train_test_split
             
             # 首先划分出测试集
-            train_val_indices, test_indices = train_test_split(
+            train_indices, test_indices = train_test_split(
                 indices, test_size=test_size, random_state=random_state
             )
-            
-            # 从剩余数据中划分验证集
-            train_indices, val_indices = train_test_split(
-                train_val_indices, test_size=val_size, random_state=random_state
-            )
+
             
         elif strategy == "stratified":
             from sklearn.model_selection import train_test_split
@@ -549,27 +545,25 @@ class pp:
                 target = nadata.Meta['target']
                 
                 # 首先划分出测试集
-                train_val_indices, test_indices = train_test_split(
+                train_indices, test_indices = train_test_split(
                     indices, test_size=test_size, random_state=random_state, 
                     stratify=target
                 )
-                
-                # 从剩余数据中划分验证集
-                train_indices, val_indices = train_test_split(
-                    train_val_indices, test_size=val_size, random_state=random_state,
-                    stratify=target[train_val_indices]
-                )
+
             else:
                 warnings.warn("No target column found for stratified sampling, using random split")
-                return pp.split_data(nadata, test_size, val_size, random_state, "random")
+                return pp.split_data(nadata, test_size, random_state, "random")
         
-        # 保存划分信息
-        nadata.config['data_split'] = {
-            'train_indices': train_indices,
-            'val_indices': val_indices,
-            'test_indices': test_indices,
-            'strategy': strategy
-        }
+        # 保存划分信息到nadata.Model.indices中
+        nadata.Model.set_indices(
+            train_idx=train_indices,
+            test_idx=test_indices,
+        )
+        
+        # 同时保存策略信息到config中
+        if not hasattr(nadata, 'config'):
+            nadata.config = {}
+        nadata.config['data_split_strategy'] = strategy
         
         return nadata
 

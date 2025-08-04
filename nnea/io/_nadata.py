@@ -4,6 +4,8 @@ import numpy as np
 from typing import Optional, Dict, Any, Union
 import h5py
 import pickle
+import os
+from datetime import datetime
 
 
 class nadata(object):
@@ -18,7 +20,7 @@ class nadata(object):
     5. **模型容器（Model）**: 储存所有模型、配置、训练历史等
     """
 
-    def __init__(self, X=None, Meta=None, Var=None, Prior=None):
+    def __init__(self, X=None, Meta=None, Var=None, Prior=None, uns=None):
         """
         初始化nadata对象
         
@@ -32,15 +34,18 @@ class nadata(object):
             基因数据，形状为(基因数, 特征数)
         Prior : Optional[Union[np.ndarray, torch.Tensor]]
             先验知识矩阵，形状为(基因集数, 基因数)
+        uns : Optional[Dict[str, Any]]
+            存储额外信息的字典，如PCA数据、数据集信息等
         """
         # 核心数据
         self.X = X          # 表达矩阵
         self.Meta = Meta    # 表型数据（包含索引）
         self.Var = Var      # 基因数据
         self.Prior = Prior  # 先验知识
+        self.uns = uns if uns is not None else {}  # 额外信息字典
         
         # 模型容器 - 包含所有模型相关的内容
-        self.Model = ModelContainer()
+        self.Model = ModelContainer(self)
         # 设置ModelContainer对nadata的引用
         self.Model._nadata = self
 
@@ -93,6 +98,13 @@ class nadata(object):
                     else:
                         f.create_dataset('Prior', data=self.Prior)
                 
+                # 保存uns字典
+                if hasattr(self, 'uns') and self.uns:
+                    # 将uns字典转换为JSON字符串存储
+                    import json
+                    uns_json = json.dumps(self.uns, default=str)
+                    f.attrs['uns'] = uns_json
+                
                 # 保存模型容器
                 if self.Model:
                     f.attrs['Model'] = str(self.Model)
@@ -140,6 +152,14 @@ class nadata(object):
                 if 'Prior' in f:
                     self.Prior = f['Prior'][:]
                 
+                # 加载uns字典
+                if 'uns' in f.attrs:
+                    import json
+                    uns_json = f.attrs['uns']
+                    self.uns = json.loads(uns_json)
+                else:
+                    self.uns = {}
+                
                 # 加载模型容器
                 if 'Model' in f.attrs:
                     # 这里需要实现模型容器的加载逻辑
@@ -167,6 +187,7 @@ class nadata(object):
             print(f"Phenotype data (Meta): {self.Meta.shape if self.Meta is not None else 'None'}")
             print(f"Gene data (Var): {self.Var.shape if self.Var is not None else 'None'}")
             print(f"Prior knowledge (Prior): {self.Prior.shape if self.Prior is not None else 'None'}")
+            print(f"Additional info (uns): {len(self.uns) if hasattr(self, 'uns') and self.uns else 0} keys")
             print(f"Model container: {self.Model}")
         elif module == 'X':
             print(f"Expression matrix shape: {self.X.shape if self.X is not None else 'None'}")
@@ -180,6 +201,14 @@ class nadata(object):
             print(f"Prior knowledge shape: {self.Prior.shape if self.Prior is not None else 'None'}")
         elif module == 'Model':
             print(f"Model container: {self.Model}")
+        elif module == 'uns':
+            print(f"Additional info (uns): {len(self.uns) if hasattr(self, 'uns') and self.uns else 0} keys")
+            if hasattr(self, 'uns') and self.uns:
+                for key, value in self.uns.items():
+                    if isinstance(value, (list, np.ndarray)):
+                        print(f"  {key}: {type(value).__name__} with shape {getattr(value, 'shape', len(value))}")
+                    else:
+                        print(f"  {key}: {value}")
         else:
             print(f"Unknown module: {module}")
 
@@ -259,6 +288,13 @@ class nadata(object):
         # 合并先验知识
         if self.Prior is not None and other.Prior is not None:
             self.Prior = np.concatenate([self.Prior, other.Prior], axis=1)
+        
+        # 合并uns字典
+        if hasattr(self, 'uns') and hasattr(other, 'uns'):
+            if self.uns is None:
+                self.uns = {}
+            if other.uns is not None:
+                self.uns.update(other.uns)
         
         # 合并模型容器
         self.Model.merge(other.Model)
@@ -557,9 +593,14 @@ class ModelContainer:
     包括模型、配置、训练历史、数据索引等
     """
     
-    def __init__(self):
+    def __init__(self, nadata_obj=None):
         """
         初始化模型容器
+        
+        Parameters:
+        -----------
+        nadata_obj : Optional[nadata]
+            关联的nadata对象
         """
         # 模型字典
         self.models = {}
@@ -579,6 +620,9 @@ class ModelContainer:
         
         # 其他元数据
         self.metadata = {}
+        
+        # 关联的nadata对象
+        self._nadata = nadata_obj
     
     def add_model(self, name: str, model):
         """
@@ -636,6 +680,34 @@ class ModelContainer:
         """
         return list(self.models.keys())
     
+    def _print_config_details(self, config: dict, indent: str = ""):
+        """
+        递归打印配置详细信息
+        
+        Parameters:
+        -----------
+        config : dict
+            配置字典
+        indent : str
+            缩进字符串
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        for key, value in config.items():
+            if isinstance(value, dict):
+                logger.info(f"{indent}📁 {key}:")
+                self._print_config_details(value, indent + "  ")
+            elif isinstance(value, list):
+                logger.info(f"{indent}📋 {key}: {value}")
+            elif isinstance(value, bool):
+                status = "✅" if value else "❌"
+                logger.info(f"{indent}{status} {key}: {value}")
+            elif isinstance(value, (int, float)):
+                logger.info(f"{indent}🔢 {key}: {value}")
+            else:
+                logger.info(f"{indent}📄 {key}: {value}")
+
     def set_config(self, config: dict):
         """
         设置配置
@@ -646,6 +718,41 @@ class ModelContainer:
             配置字典
         """
         self.config = config
+        
+        # 创建输出目录
+        import os
+        outdir = config.get('global', {}).get('outdir', 'experiment/test')
+        os.makedirs(outdir, exist_ok=True)
+        
+        # 设置日志输出到指定目录
+        from ..logging_utils import setup_logging
+        import logging
+        
+        # 创建日志子目录
+        log_dir = os.path.join(outdir, 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # 重新配置日志，将日志文件保存到outdir/logs目录
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = os.path.join(log_dir, f"experiment_{timestamp}.log")
+        
+        # 重新设置日志配置
+        setup_logging(log_file=log_file)
+        
+        # 记录配置设置信息
+        logger = logging.getLogger(__name__)
+        logger.info(f"配置已设置，输出目录: {outdir}")
+        logger.info(f"日志文件: {log_file}")
+        
+        # 详细打印配置参数
+        logger.info("=" * 60)
+        logger.info("📋 NNEA配置文件详细参数:")
+        logger.info("=" * 60)
+        self._print_config_details(config)
+        logger.info("=" * 60)
+        
+        # 将输出目录信息存储到配置中，供其他模块使用
+        self.outdir = outdir
     
     def get_config(self) -> dict:
         """
@@ -682,7 +789,7 @@ class ModelContainer:
     
     def set_indices(self, train_idx=None, test_idx=None, val_idx=None):
         """
-        设置数据索引到nadata.Var中
+        设置数据索引到Model容器的indices中
         
         Parameters:
         -----------
@@ -693,53 +800,7 @@ class ModelContainer:
         val_idx : Optional[list]
             验证集索引
         """
-        # 检查是否只输入了train_idx和test_idx，如果是则自动删除val_idx
-        if train_idx is not None and test_idx is not None and val_idx is None:
-            # 如果只设置了train_idx和test_idx，将val_idx设置为None
-            val_idx = None
-        
-        # 创建索引DataFrame
-        indices_data = {}
-        if train_idx is not None:
-            indices_data['train'] = train_idx
-        if test_idx is not None:
-            indices_data['test'] = test_idx
-        if val_idx is not None:
-            indices_data['val'] = val_idx
-        
-        # 将索引信息存储到nadata.Var中
-        if hasattr(self, '_nadata') and self._nadata is not None:
-            try:
-                import pandas as pd
-                if self._nadata.Var is None:
-                    # 如果Var不存在，创建一个空的DataFrame
-                    self._nadata.Var = pd.DataFrame()
-                
-                # 添加indices列，将字典存储为单个值
-                if len(self._nadata.Var) == 0:
-                    # 如果DataFrame为空，先添加一行
-                    self._nadata.Var = pd.DataFrame([{'indices': indices_data}])
-                else:
-                    # 如果DataFrame不为空，在索引0处设置值
-                    # 确保indices列存在
-                    if 'indices' not in self._nadata.Var.columns:
-                        self._nadata.Var['indices'] = None
-                    
-                    # 检查DataFrame是否有索引0，如果没有则添加一行
-                    if 0 not in self._nadata.Var.index:
-                        # 添加一行到DataFrame
-                        new_row = pd.DataFrame([{'indices': indices_data}], index=[0])
-                        self._nadata.Var = pd.concat([self._nadata.Var, new_row])
-                    else:
-                        # 使用at方法设置单个值，避免Series对齐问题
-                        self._nadata.Var.at[0, 'indices'] = indices_data
-            except ImportError:
-                # 如果没有pandas，使用简单的字典存储
-                if not hasattr(self._nadata, '_indices'):
-                    self._nadata._indices = {}
-                self._nadata._indices = indices_data
-        
-        # 同时保持原有的Model容器索引存储（向后兼容）
+        # 直接存储到Model容器的indices属性中
         if train_idx is not None:
             self.indices['train'] = train_idx
         if test_idx is not None:
@@ -764,23 +825,7 @@ class ModelContainer:
         Union[list, dict]
             索引列表或字典
         """
-        # 优先从nadata.Var中获取索引信息
-        if hasattr(self, '_nadata') and self._nadata is not None:
-            try:
-                import pandas as pd
-                if self._nadata.Var is not None and 'indices' in self._nadata.Var.columns and len(self._nadata.Var) > 0:
-                    indices_data = self._nadata.Var.loc[0, 'indices']
-                    if split is None:
-                        return indices_data
-                    return indices_data.get(split) if isinstance(indices_data, dict) else None
-            except ImportError:
-                # 如果没有pandas，从_indices属性获取
-                if hasattr(self._nadata, '_indices') and self._nadata._indices:
-                    if split is None:
-                        return self._nadata._indices
-                    return self._nadata._indices.get(split)
-        
-        # 如果Var中没有索引信息，则从Model容器中获取（向后兼容）
+        # 直接从Model容器的indices属性获取
         if split is None:
             return self.indices
         return self.indices.get(split)

@@ -17,7 +17,7 @@ from . import logging_utils
 
 # 主要接口函数
 from .io import CreateNNEA, nadata
-from .model.models import build, train, eval, explain, save_model, load_project, get_summary, train_classification_models, compare_models
+from .model.models import build, train, eval, explain, save_model, load_project, get_summary, train_classification_models, compare_models, print_model_structure, predict
 # from .model.classification_models import (  # 暂时注释掉
 #     build_classification_models, train_classification_models as train_clf_models, 
 #     ClassificationModelComparison
@@ -37,6 +37,11 @@ from .model.models import build, train, eval, explain, save_model, load_project,
 
 # 数据预处理功能
 from .data_factory import pp
+# 特征选择功能
+from .data_factory.feature_selection import fs
+
+# 工具函数
+from .utils.helpers import set_global_seed, get_seed_from_config, ensure_reproducibility
 
 # 日志相关
 from .logging_utils import setup_logging, get_logger, logger
@@ -55,6 +60,8 @@ __all__ = [
     "save_model",
     "load_project", 
     "get_summary",
+    "print_model_structure",
+    "predict",
     # "build_classification_models",  # 暂时注释掉
     # "train_classification_models",
     # "train_clf_models",
@@ -74,6 +81,10 @@ __all__ = [
     # "MultiModelCrossValidator",
     # "run_multi_model_cv_experiment",
     "pp",
+    "fs",
+    "set_global_seed",
+    "get_seed_from_config", 
+    "ensure_reproducibility",
     "setup_logging",
     "get_logger",
     "logger"
