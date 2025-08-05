@@ -34,8 +34,8 @@
 
     # 特征选择配置
     feature_selection = true
-    selection_method = "lasso"
-    n_features = 100
+    selection_method = "random_forest"
+    n_features = 30
     selection_alpha = 0.01
 
     # 数据预处理配置

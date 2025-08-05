@@ -799,7 +799,7 @@ class NNEAClassifier(BaseModel):
                         val_metrics = self._calculate_validation_metrics(all_predictions, all_targets)
                         
                         # 显示评估指标
-                        metrics_info = f"Epoch {epoch} Metrics: AUC={val_metrics['auc']:.4f}, F1={val_metrics['f1']:.4f}, Recall={val_metrics['recall']:.4f}, Precision={val_metrics['precision']:.4f}"
+                        metrics_info = f"Epoch {epoch} Vak Metrics: AUC={val_metrics['auc']:.4f}, F1={val_metrics['f1']:.4f}, Recall={val_metrics['recall']:.4f}, Precision={val_metrics['precision']:.4f}"
                         self.logger.info(metrics_info)
                 
                 # 早停检查和checkpoint保存

@@ -185,12 +185,12 @@ class fs:
         else:  # 回归问题
             model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
         
-        model.fit(X.T, y)
+        model.fit(X, y)
         
         # 获取特征重要性
         feature_importance = model.feature_importances_
         top_indices = np.argsort(feature_importance)[-n_features:]
-        return X[top_indices, :], top_indices
+        return X[:, top_indices], top_indices
     
     @staticmethod
     def _rfe_selection(X: np.ndarray, y: pd.Series, n_features: int, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
@@ -241,7 +241,7 @@ class fs:
     def _differential_expression_selection(nadata, n_features: int, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
         """差异表达分析选择"""
         X = nadata.X
-        group_col = kwargs.get('group_col', 'group')
+        group_col = kwargs.get('group_col', 'target')
         method = kwargs.get('method', 't_test')
         
         if group_col not in nadata.Meta.columns:
@@ -255,9 +255,9 @@ class fs:
         
         # 计算差异表达统计量
         p_values = []
-        for i in range(X.shape[0]):
-            group1_data = X[i, groups == unique_groups[0]]
-            group2_data = X[i, groups == unique_groups[1]]
+        for i in range(X.shape[1]):
+            group1_data = X[groups == unique_groups[0], i]
+            group2_data = X[groups == unique_groups[1], i]
             
             if method == "t_test":
                 _, p_val = stats.ttest_ind(group1_data, group2_data)
@@ -270,7 +270,7 @@ class fs:
         
         # 选择p值最小的特征
         top_indices = np.argsort(p_values)[:n_features]
-        return X[top_indices, :], top_indices
+        return X[:, top_indices], top_indices
     
     @staticmethod
     def _survival_analysis_selection(nadata, n_features: int, **kwargs) -> Tuple[np.ndarray, np.ndarray]:

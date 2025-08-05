@@ -1,0 +1,61 @@
+# MLPClassifier模型配置文件
+# 全局配置
+[global]
+    model = "mlp"
+    device = "auto"  # 自动检测GPU/CPU
+    seed = 42
+    inputfl = "./datasets/tumor_imm/melanoma_immunotherapy.pkl"
+    outputfl = "melanoma_imm_MLP.pkl"
+    outdir = "experiment/melanoma_imm_MLP"
+
+# 数据集配置
+[dataset]
+    test_size = 0.2
+    val_size = 0.2
+    random_state = 42
+
+# MLPClassifier模型配置
+[mlp]
+    # 基础参数
+    hidden_layer_sizes = [[50], [100], [50, 25], [100, 50]]  # 隐藏层结构
+    activation = ["relu", "tanh"]  # 激活函数
+    solver = ["adam", "sgd"]  # 优化器
+    alpha = [0.0001, 0.001, 0.01]  # L2正则化参数
+    learning_rate = ["constant", "adaptive"]  # 学习率策略
+    max_iter = 500  # 最大迭代次数
+
+    # 其他可选参数
+    random_state = 42  # 随机种子
+    early_stopping = true  # 早停
+    validation_fraction = 0.1  # 验证集比例
+
+    # 交叉验证配置
+    cv_folds = 5  # 交叉验证折数
+    cv_scoring = "roc_auc"  # 评估指标
+    n_jobs = 8  # 并行作业数
+
+    # 特征选择配置 - MLP可以处理更多特征，但需要特征选择
+    feature_selection = true
+    selection_method = "lasso"
+    n_features = 150  # MLP可以处理更多特征
+    selection_alpha = 0.01
+
+    # 数据预处理配置 - MLP对特征尺度敏感，必须标准化
+    [mlp.preprocessing]
+        fill_na = true
+        fill_method = "mean"
+        scale_data = true  # MLP必须标准化
+        scale_method = "standard"
+
+# 训练配置
+[training]
+    verbose = 1
+    save_model = true
+    save_format = "pickle"
+    save_data = true
+
+# 评估配置
+[evaluation]
+    metrics = ["roc_auc", "classification_report"]
+    save_predictions = true
+    save_probabilities = true 
