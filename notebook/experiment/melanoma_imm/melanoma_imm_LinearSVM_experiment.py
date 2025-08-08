@@ -1,20 +1,21 @@
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import LinearSVC
 from sklearn.metrics import roc_auc_score, classification_report
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.calibration import CalibratedClassifierCV
 
 import nnea as na
 import numpy as np
-import torch
 import os
 import warnings
 import toml  # 用于读取toml文件
 import random
+import torch
 
 warnings.filterwarnings('ignore')
 
-# 读取RandomForestClassifier配置文件
+# 读取LinearSVM配置文件
 try:
-    config = toml.load("./config.toml")
+    config = toml.load("config.toml")
 except Exception as e:
     print(f"❌ 配置文件读取失败: {e}")
     exit(1)
@@ -38,11 +39,11 @@ output_dir = config['global']['outdir']
 os.makedirs(output_dir, exist_ok=True)
 
 # 设置日志输出到输出目录
-log_file = os.path.join(output_dir, "random_forest_experiment.log")
-na.setup_logging(log_file=log_file, experiment_name="random_forest")
+log_file = os.path.join(output_dir, "linear_svm_experiment.log")
+na.setup_logging(log_file=log_file, experiment_name="linear_svm")
 logger = na.get_logger(__name__)
 
-logger.info("⚙️ 读取RandomForestClassifier配置文件...")
+logger.info("⚙️ 读取LinearSVM配置文件...")
 logger.info("✅ 配置文件读取成功")
 logger.info(f"📁 创建输出目录: {output_dir}")
 logger.info(f"📝 日志文件已设置到: {log_file}")
@@ -67,7 +68,7 @@ logger.info("🔧 数据预处理...")
 X = nadata.X
 
 # 使用配置中的预处理设置
-preprocessing_config = config['random_forest']['preprocessing']
+preprocessing_config = config['linear_svm']['preprocessing']
 
 # 使用na.pp.fillna处理缺失值
 if preprocessing_config['fill_na'] and np.isnan(X).any():
@@ -77,7 +78,7 @@ if preprocessing_config['fill_na'] and np.isnan(X).any():
 else:
     logger.info("✅ X中未检测到NaN值")
 
-# 使用na.pp.scale进行标准化处理
+# 使用na.pp.scale进行标准化处理 - Linear SVM对特征尺度敏感
 if preprocessing_config['scale_data']:
     X = na.pp.scale(X, method=preprocessing_config['scale_method'])
     logger.info("✅ 数据标准化完成")
@@ -91,16 +92,16 @@ y = y.map({'N': 0, 'R': 1})
 nadata.Meta['target'] = y  # 模型默认使用target
 
 # 特征选择
-if config['random_forest']['feature_selection']:
+if config['linear_svm']['feature_selection']:
     logger.info("🔍 特征选择...")
     nadata = na.fs.apply_feature_selection(
         nadata,
-        method=config['random_forest']['selection_method'],
-        n_features=config['random_forest']['n_features'],
+        method=config['linear_svm']['selection_method'],
+        n_features=config['linear_svm']['n_features'],
         target_col='target',  # 使用默认的target列
-        alpha=config['random_forest']['selection_alpha']
+        alpha=config['linear_svm']['selection_alpha']
     )
-    logger.info(f"✅ 特征选择完成，选择特征数: {config['random_forest']['n_features']}")
+    logger.info(f"✅ 特征选择完成，选择特征数: {config['linear_svm']['n_features']}")
 
 # 数据分割
 logger.info("✂️ 进行数据分割...")
@@ -126,32 +127,29 @@ logger.info(f"测试集标签形状: {y_test.shape}")
 
 # 从配置文件构建参数网格
 param_grid = {
-    'n_estimators': config['random_forest']['n_estimators'],
-    'criterion': config['random_forest']['criterion'],
-    'max_depth': config['random_forest']['max_depth'] + [None],
-    'min_samples_split': config['random_forest']['min_samples_split'],
-    'min_samples_leaf': config['random_forest']['min_samples_leaf'],
-    'max_features': config['random_forest']['max_features'] + [None]
+    'C': config['linear_svm']['C'],
+    'loss': config['linear_svm']['loss']
 }
 
-# 构建RandomForestClassifier模型
-rf = RandomForestClassifier(
-    random_state=config['random_forest']['random_state'],
-    class_weight=config['random_forest']['class_weight'],
-    n_jobs=config['random_forest']['n_jobs']
+# 构建LinearSVC模型
+linear_svc = LinearSVC(
+    random_state=config['linear_svm']['random_state'],
+    class_weight=config['linear_svm']['class_weight'],
+    max_iter=config['linear_svm']['max_iter'],
+    dual=False  # 对于大数据集，使用primal形式更快
 )
 
 # 网格搜索交叉验证
 grid = GridSearchCV(
-    rf,
+    linear_svc,
     param_grid,
     cv=StratifiedKFold(
-        n_splits=config['random_forest']['cv_folds'],
+        n_splits=config['linear_svm']['cv_folds'],
         shuffle=True,
-        random_state=config['random_forest']['random_state']
+        random_state=config['linear_svm']['random_state']
     ),
-    scoring=config['random_forest']['cv_scoring'],
-    n_jobs=config['random_forest']['n_jobs'],
+    scoring=config['linear_svm']['cv_scoring'],
+    n_jobs=config['linear_svm']['n_jobs'],
     verbose=config['training']['verbose']
 )
 
@@ -159,13 +157,23 @@ logger.info("🚀 开始网格搜索训练...")
 grid.fit(X_train, y_train)
 
 logger.info(f"最优参数: {grid.best_params_}")
-logger.info(f"最佳AUC得分: {grid.best_score_}")
+logger.info(f"最佳交叉验证得分: {grid.best_score_}")
+
+# LinearSVC不直接提供概率，需要使用CalibratedClassifierCV进行概率校准
+logger.info("🔧 进行概率校准...")
+calibrated_model = CalibratedClassifierCV(
+    grid.best_estimator_,
+    cv=3,
+    method='sigmoid'
+)
+calibrated_model.fit(X_train, y_train)
 
 # 在测试集上评估
-y_pred = grid.predict(X_test)
-y_proba = grid.predict_proba(X_test)[:, 1]
+y_pred = calibrated_model.predict(X_test)
+y_proba = calibrated_model.predict_proba(X_test)[:, 1]
 
 from sklearn.metrics import f1_score, accuracy_score, recall_score, precision_score
+# 计算并记录F1、召回率、精确率和准确率
 f1 = f1_score(y_test, y_pred)
 recall = recall_score(y_test, y_pred)
 precision = precision_score(y_test, y_pred)
@@ -179,31 +187,32 @@ logger.info(f"测试集准确率: {acc:.4f}")
 logger.info(f"测试集AUC: {auc:.4f}")
 logger.info(f"测试集分类报告:\n{classification_report(y_test, y_pred)}")
 
-# 构建RandomForestClassifier结果字典
-rf_result = {
+# 构建LinearSVM结果字典
+linear_svm_result = {
     "best_params": grid.best_params_,
-    "best_cv_auc": grid.best_score_,
+    "best_cv_score": grid.best_score_,
     "test_auc": auc,
     "test_report": classification_report(y_test, y_pred, output_dict=True),
     "test_pred": y_pred,
     "test_proba": y_proba,
     "test_true": y_test.values,
-    "best_model": grid.best_estimator_  # 保存最佳模型
+    "best_model": grid.best_estimator_,  # 保存最佳模型
+    "calibrated_model": calibrated_model  # 保存校准后的模型
 }
 
 # 保存到nadata对象
 if not hasattr(nadata, "Model"):
     nadata.Model = {}
 
-nadata.Model["RandomForestClassifier"] = rf_result
+nadata.Model["LinearSVM"] = linear_svm_result
 
 # 保存nadata对象到配置的输出目录
 output_file = os.path.join(output_dir, config['global']['outputfl'])
 nadata.save(output_file, format=config['training']['save_format'], save_data=config['training']['save_data'])
-logger.info(f"✅ 已完成random forest模型训练，并保存到: {output_file}")
+logger.info(f"✅ 已完成LinearSVM模型训练，并保存到: {output_file}")
 
 # 保存配置信息
-config_file = os.path.join(output_dir, "random_forest_config.toml")
+config_file = os.path.join(output_dir, "linear_svm_config.toml")
 with open(config_file, 'w', encoding='utf-8') as f:
     toml.dump(config, f)
 logger.info(f"✅ 配置文件已保存到: {config_file}")
@@ -211,10 +220,10 @@ logger.info(f"✅ 配置文件已保存到: {config_file}")
 # 保存训练结果摘要
 summary_file = os.path.join(output_dir, "training_summary.txt")
 with open(summary_file, 'w', encoding='utf-8') as f:
-    f.write("RandomForestClassifier 训练结果摘要\n")
+    f.write("LinearSVM 训练结果摘要\n")
     f.write("=" * 50 + "\n")
     f.write(f"最优参数: {grid.best_params_}\n")
-    f.write(f"最佳交叉验证AUC: {grid.best_score_:.4f}\n")
+    f.write(f"最佳交叉验证得分: {grid.best_score_:.4f}\n")
     f.write(f"测试集AUC: {auc:.4f}\n")
     f.write(f"测试集F1分数: {f1:.4f}\n")
     f.write(f"测试集召回率: {recall:.4f}\n")
@@ -226,4 +235,4 @@ with open(summary_file, 'w', encoding='utf-8') as f:
     f.write(classification_report(y_test, y_pred))
 
 logger.info(f"✅ 训练结果摘要已保存到: {summary_file}")
-logger.info("🎉 实验完成！")
+logger.info("🎉 LinearSVM实验完成！")

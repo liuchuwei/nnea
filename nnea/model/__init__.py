@@ -9,7 +9,8 @@ from .models import (
     print_model_structure
 )
 from .base import BaseModel
-from .nnea_model import NNEAClassifier, NNEAModel
+from .nnea_model import NNEAModel
+from .nnea_classifier import NNEAClassifier
 from .nnea_layers import (
     GeneSetLayer, TrainableGeneSetLayer, AttentionLayer, 
     ExplainableLayer, BiologicalConstraintLayer

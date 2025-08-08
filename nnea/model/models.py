@@ -8,10 +8,14 @@ import torch
 import os
 from typing import Dict, Any, Optional
 from .base import BaseModel
-from .nnea_model import NNEAClassifier
+from .nnea_classifier import NNEAClassifier
+from .nnea_survival import NNEASurvival
 from ..utils.helpers import ensure_reproducibility
 import torch.nn as nn
 import numpy as np
+from .nnea_autoencoder import NNEAAutoencoder
+from .nnea_regresser import NNEARegresser
+from .nnea_umap import NNEAUMAP
 
 logger = logging.getLogger(__name__)
 
@@ -50,16 +54,16 @@ def build_model(config: Dict[str, Any]) -> BaseModel:
         return NNEAClassifier(model_config)
     elif model_type == 'nnea_regression':
         logger.info("构建NNEA回归器")
-        # TODO: 实现NNEA回归器
-        raise NotImplementedError("NNEA回归器尚未实现")
+        return NNEARegresser(model_config)
     elif model_type == 'nnea_survival':
         logger.info("构建NNEA生存分析模型")
-        # TODO: 实现NNEA生存分析模型
-        raise NotImplementedError("NNEA生存分析模型尚未实现")
-    elif model_type == 'nnea_dimension':
-        logger.info("构建NNEA降维模型")
-        # TODO: 实现NNEA降维模型
-        raise NotImplementedError("NNEA降维模型尚未实现")
+        return NNEASurvival(model_config)
+    elif model_type == 'nnea_autoencoder':
+        logger.info("构建NNEA自编码器")
+        return NNEAAutoencoder(model_config)
+    elif model_type == 'nnea_umap':
+        logger.info("构建NNEA UMAP模型")
+        return NNEAUMAP(model_config)
     else:
         raise ValueError(f"不支持的模型类型: {model_type}")
 
@@ -424,10 +428,19 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
                     best_config['nnea'] = nnea_config
                     
                     # 创建新的模型实例
-                    from .nnea_model import NNEAClassifier
-                    best_model = NNEAClassifier(best_config)
-                    best_model.build(nadata)
-                    
+                    if config.get('global').get('model') == "nnea_classifier":
+                        from .nnea_classifier import NNEAClassifier
+                        best_model = NNEAClassifier(best_config)
+                        best_model.build(nadata)
+                    elif config.get('global').get('model') == "nnea_survival":
+                        from .nnea_survival import NNEASurvival
+                        best_model = NNEASurvival(best_config)
+                        best_model.build(nadata)
+                    elif config.get('global').get('model') == "nnea_regression":
+                        from .nnea_regresser import NNEARegresser
+                        best_model = NNEARegresser(best_config)
+                        best_model.build(nadata)
+
                     # 加载最佳模型状态
                     best_model.model.load_state_dict(best_model_state)
                     best_model.device = current_model.device
@@ -526,9 +539,15 @@ def _crop_nnea_model(nadata, model, important_indices: np.ndarray, config: Dict[
     logger.info(f"裁剪基因集数量: {original_num_genesets} -> {new_num_genesets}")
     
     # 创建新的模型实例
-    from .nnea_model import NNEAClassifier
-    cropped_model = NNEAClassifier(cropped_config)
-    
+    if cropped_config.get('global').get("model") == 'nnea_classifier':
+        from .nnea_classifier import NNEAClassifier
+        cropped_model = NNEAClassifier(cropped_config)
+    elif cropped_config.get('global').get('model') == 'nnea_survival':
+        from .nnea_survival import NNEASurvival
+        cropped_model = NNEASurvival(cropped_config)
+    elif cropped_config.get('global').get('model') == 'nnea_regression':
+        from .nnea_regresser import NNEARegresser
+        cropped_model = NNEARegresser(cropped_config)
     # 构建新模型
     cropped_model.build(nadata)
     
@@ -952,39 +971,39 @@ def compare_models(nadata, config: Optional[Dict[str, Any]] = None, verbose: int
         import pandas as pd
         results['comparison_df'] = pd.DataFrame(comparison_data)
     
-    return results 
+    return results
 
 def predict(nadata, split='test', model_name: Optional[str] = None, return_probabilities: bool = True) -> Dict[str, Any]:
     """
     模型预测
-    
+
     Args:
         nadata: nadata对象
         split: 预测的数据集分割
         model_name: 模型名称
         return_probabilities: 是否返回概率值
-        
+
     Returns:
         预测结果字典，包含预测值、概率值、真实标签等
     """
-    from sklearn.metrics import classification_report, roc_auc_score
+    from sklearn.metrics import classification_report, roc_auc_score, mean_squared_error, mean_absolute_error, r2_score
     import torch
-    
+
     logger = logging.getLogger(__name__)
-    
+
     if not nadata.Model.models:
         raise ValueError("nadata.Model中没有模型，请先调用build()")
-    
+
     # 确定要预测的模型
     if model_name is None:
         model_type = nadata.Model.get_config().get('global', {}).get('model', 'nnea')
         model = nadata.Model.get_model(model_type)
     else:
         model = nadata.Model.get_model(model_name)
-    
+
     if model is None:
         raise ValueError(f"未找到模型: {model_name or 'default'}")
-    
+
     # 获取数据索引
     indices = nadata.Model.get_indices(split)
     if indices is None:
@@ -996,25 +1015,30 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
             'predictions': None,
             'error': f"未找到{split}集的索引"
         }
-    
+
     try:
         # 获取测试集数据
         X_test = nadata.X[indices]  # 转置为(样本数, 特征数)
-        
+
         # 获取目标列名
         config = nadata.Model.get_config()
         target_col = config.get('dataset', {}).get('target_column', 'target')
         y_test = nadata.Meta.iloc[indices][target_col].values
-        
+
         logger.info(f"🔮 进行模型预测...")
         logger.info(f"📊 测试集形状: X_test={X_test.shape}, y_test={y_test.shape}")
-        
+
         # 模型预测
         model.model.eval()
         with torch.no_grad():
             X_test_tensor = torch.FloatTensor(X_test).to(model.device)
             outputs = model.model(X_test_tensor)
-            
+
+        # 根据任务类型处理预测结果
+        task_type = getattr(model, 'task', 'classification')
+        
+        if task_type == 'classification':
+            # 分类任务处理
             if outputs.shape[1] == 2:
                 # 二分类情况
                 y_proba = torch.softmax(outputs, dim=1).cpu().numpy()[:, 1]
@@ -1023,38 +1047,105 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
                 # 多分类情况
                 y_proba = torch.softmax(outputs, dim=1).cpu().numpy()
                 y_pred = np.argmax(y_proba, axis=1)
-        
-        # 计算评估指标
-        if len(np.unique(y_test)) == 2:
-            # 二分类
-            auc = roc_auc_score(y_test, y_proba)
-            logger.info(f"📊 测试集AUC：{auc:.4f}")
+
+            # 计算评估指标
+            if len(np.unique(y_test)) == 2:
+                # 二分类
+                auc = roc_auc_score(y_test, y_proba)
+                logger.info(f"📊 测试集AUC：{auc:.4f}")
+            else:
+                # 多分类
+                auc = roc_auc_score(y_test, y_proba, multi_class='ovr')
+                logger.info(f"📊 测试集AUC：{auc:.4f}")
+
+            # 输出分类报告
+            logger.info("📊 预测结果:")
+            logger.info(f"测试集分类报告：\n{classification_report(y_test, y_pred)}")
+
+            # 保存预测结果到Model容器
+            prediction_results = {
+                'y_test': y_test,
+                'y_pred': y_pred,
+                'y_proba': y_proba,
+                'predictions': outputs.cpu().numpy(),
+                'auc': auc,
+                'split': split,
+                'task_type': 'classification'
+            }
+
+        elif task_type == 'survival':
+            # 生存任务处理
+            time_col = config.get('dataset', {}).get('time_column', 'Time')
+            event_col = config.get('dataset', {}).get('event_column', 'Event')
+            
+            times = nadata.Meta.iloc[indices][time_col].values
+            events = nadata.Meta.iloc[indices][event_col].values
+            
+            # 生存分析预测结果
+            risk_scores = outputs.cpu().numpy().flatten()
+            
+            # 计算生存分析指标
+            from lifelines.utils import concordance_index
+            c_index = concordance_index(times, -risk_scores, events)
+            
+            logger.info(f"📊 测试集C-index：{c_index:.4f}")
+            
+            # 保存预测结果到Model容器
+            prediction_results = {
+                'times': times,
+                'events': events,
+                'risk_scores': risk_scores,
+                'predictions': outputs.cpu().numpy(),
+                'c_index': c_index,
+                'split': split,
+                'task_type': 'survival'
+            }
+
+        elif task_type == 'regression':
+            # 回归任务处理
+            predictions = outputs.cpu().numpy().flatten()
+            
+            # 计算回归评估指标
+            mse = mean_squared_error(y_test, predictions)
+            mae = mean_absolute_error(y_test, predictions)
+            r2 = r2_score(y_test, predictions)
+            rmse = np.sqrt(mse)
+            
+            logger.info(f"📊 测试集回归指标：")
+            logger.info(f"  MSE: {mse:.4f}")
+            logger.info(f"  MAE: {mae:.4f}")
+            logger.info(f"  R²: {r2:.4f}")
+            logger.info(f"  RMSE: {rmse:.4f}")
+            
+            # 保存预测结果到Model容器
+            prediction_results = {
+                'y_test': y_test,
+                'predictions': predictions,
+                'mse': mse,
+                'mae': mae,
+                'r2': r2,
+                'rmse': rmse,
+                'split': split,
+                'task_type': 'regression'
+            }
+
         else:
-            # 多分类
-            auc = roc_auc_score(y_test, y_proba, multi_class='ovr')
-            logger.info(f"📊 测试集AUC：{auc:.4f}")
-        
-        # 输出分类报告
-        logger.info("📊 预测结果:")
-        logger.info(f"测试集分类报告：\n{classification_report(y_test, y_pred)}")
-        
-        # 保存预测结果到Model容器
-        prediction_results = {
-            'y_test': y_test,
-            'y_pred': y_pred,
-            'y_proba': y_proba,
-            'predictions': outputs.cpu().numpy(),
-            'auc': auc,
-            'split': split
-        }
-        
+            # 其他任务类型
+            predictions = outputs.cpu().numpy()
+            prediction_results = {
+                'y_test': y_test,
+                'predictions': predictions,
+                'split': split,
+                'task_type': task_type
+            }
+
         # 保存到nadata的Model容器
         nadata.Model.add_metadata('prediction_results', prediction_results)
-        
+
         logger.info(f"✅ 模型预测完成，结果已保存到nadata.Model")
-        
+
         return prediction_results
-        
+
     except Exception as e:
         logger.error(f"❌ 模型预测失败: {e}")
         return {
@@ -1063,4 +1154,4 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
             'y_proba': None,
             'predictions': None,
             'error': str(e)
-        } 
+        }

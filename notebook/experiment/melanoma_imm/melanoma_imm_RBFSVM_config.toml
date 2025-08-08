@@ -17,8 +17,8 @@
 # RBFSVM模型配置
 [rbf_svm]
     # 基础参数
-    C = [0.1, 1, 10, 100]  # 正则化参数
-    gamma = ["scale", "auto", 0.001, 0.01, 0.1]  # RBF核参数
+    C = [0.1, 1.0, 10.0, 100.0]  # 正则化参数
+    gamma = [0.001, 0.01, 0.1]  # RBF核参数
     kernel = ["rbf"]  # 核函数类型
 
     # 其他可选参数
@@ -34,7 +34,7 @@
     # 特征选择配置 - SVM需要特征选择来减少计算复杂度
     feature_selection = true
     selection_method = "lasso"
-    n_features = 50  # SVM特征数不宜太多
+    n_features = 30  # SVM特征数不宜太多
     selection_alpha = 0.01
 
     # 数据预处理配置 - SVM对特征尺度敏感，必须标准化

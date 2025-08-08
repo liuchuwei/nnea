@@ -17,7 +17,7 @@
 # LinearSVM模型配置
 [linear_svm]
     # 基础参数
-    C = [0.01, 0.1, 1, 10, 100]  # 正则化参数
+    C = [0.01, 0.10, 1.0, 10.0, 100.0]  # 正则化参数
     kernel = ["linear"]  # 线性核函数
     loss = ["hinge", "squared_hinge"]  # 损失函数
 
@@ -34,7 +34,7 @@
     # 特征选择配置 - Linear SVM可以处理更多特征
     feature_selection = true
     selection_method = "lasso"
-    n_features = 100  # 线性SVM可以处理更多特征
+    n_features = 30  # 线性SVM可以处理更多特征
     selection_alpha = 0.01
 
     # 数据预处理配置 - Linear SVM对特征尺度敏感，必须标准化
@@ -55,4 +55,4 @@
 [evaluation]
     metrics = ["roc_auc", "classification_report"]
     save_predictions = true
-    save_probabilities = true 
+    save_probabilities = true

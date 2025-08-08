@@ -17,7 +17,7 @@
 # MLPClassifier模型配置
 [mlp]
     # 基础参数
-    hidden_layer_sizes = [[50], [100], [50, 25], [100, 50]]  # 隐藏层结构
+    hidden_layer_sizes = [[256], [512], [512, 256], [256, 128]]  # 隐藏层结构
     activation = ["relu", "tanh"]  # 激活函数
     solver = ["adam", "sgd"]  # 优化器
     alpha = [0.0001, 0.001, 0.01]  # L2正则化参数
@@ -36,8 +36,8 @@
 
     # 特征选择配置 - MLP可以处理更多特征，但需要特征选择
     feature_selection = true
-    selection_method = "lasso"
-    n_features = 150  # MLP可以处理更多特征
+    selection_method = "differential_expression"
+    n_features = 7000  # MLP可以处理更多特征
     selection_alpha = 0.01
 
     # 数据预处理配置 - MLP对特征尺度敏感，必须标准化

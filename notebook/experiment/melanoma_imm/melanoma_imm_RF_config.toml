@@ -35,8 +35,8 @@
 
     # 特征选择配置 - RF通常不需要标准化，但需要特征选择
     feature_selection = true
-    selection_method = "lasso"
-    n_features = 100
+    selection_method = "random_forest"
+    n_features = 30
     selection_alpha = 0.01
 
     # 数据预处理配置 - RF对特征尺度不敏感，但需要处理缺失值
@@ -57,4 +57,4 @@
 [evaluation]
     metrics = ["roc_auc", "classification_report"]
     save_predictions = true
-    save_probabilities = true 
+    save_probabilities = true

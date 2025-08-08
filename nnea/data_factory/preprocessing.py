@@ -18,6 +18,129 @@ class pp:
     """
     
     @staticmethod
+    def process_survival_data(nadata, os_col: str = 'OS', os_time_col: str = 'OS.time', 
+                              time_unit: str = 'auto'):
+        """
+        生存数据标准处理
+        
+        Parameters:
+        -----------
+        nadata : nadata对象
+            包含生存数据的nadata对象
+        os_col : str
+            生存状态列名，默认为'OS'
+        os_time_col : str
+            生存时间列名，默认为'OS.time'
+        time_unit : str
+            时间单位：'auto', 'days', 'months', 'years'
+            如果为'auto'，将自动判断并统一转换为月
+            
+        Returns:
+        --------
+        nadata
+            处理后的nadata对象
+        """
+        if nadata.Meta is None:
+            raise ValueError("nadata.Meta is None, cannot process survival data")
+        
+        if os_col not in nadata.Meta.columns:
+            raise ValueError(f"Column '{os_col}' not found in nadata.Meta")
+        
+        if os_time_col not in nadata.Meta.columns:
+            raise ValueError(f"Column '{os_time_col}' not found in nadata.Meta")
+        
+        # 提取生存数据
+        y = nadata.Meta.loc[:, [os_col, os_time_col]].copy()
+        
+        # 处理生存时间单位转换
+        os_time = y[os_time_col]
+        
+        if time_unit == 'auto':
+            # 自动判断时间单位并统一转换为月
+            max_time = os_time.max()
+            if max_time > 1000:
+                # 假设为天，转为月
+                y[os_time_col] = os_time / 30.44
+                print(f"🕐 检测到时间单位为天，已转换为月（除以30.44）")
+            elif max_time < 100:
+                # 假设为年，转为月
+                y[os_time_col] = os_time * 12
+                print(f"🕐 检测到时间单位为年，已转换为月（乘以12）")
+            else:
+                # 已为月，无需处理
+                print(f"🕐 检测到时间单位为月，无需转换")
+        elif time_unit == 'days':
+            y[os_time_col] = os_time / 30.44
+            print(f"🕐 将时间从天转换为月（除以30.44）")
+        elif time_unit == 'years':
+            y[os_time_col] = os_time * 12
+            print(f"🕐 将时间从年转换为月（乘以12）")
+        elif time_unit == 'months':
+            # 已为月，无需处理
+            pass
+        else:
+            raise ValueError(f"Unsupported time_unit: {time_unit}")
+        
+        # 处理生存状态标签
+        os_col_data = y[os_col]
+        
+        # 判断OS是否为0/1变量，如果为字符串则转换
+        if os_col_data.dtype == object or str(os_col_data.dtype).startswith('str'):
+            # 常见生存分析标签映射
+            label_mapping = {
+                'Dead': 1, 'Alive': 0,
+                'deceased': 1, 'living': 0,
+                '1': 1, '0': 0,
+                'TRUE': 1, 'FALSE': 0,
+                'True': 1, 'False': 0,
+                'T': 1, 'F': 0,
+                't': 1, 'f': 0
+            }
+            
+            # 尝试映射
+            y[os_col] = os_col_data.map(label_mapping)
+            
+            # 检查是否有未映射的值
+            if y[os_col].isnull().any():
+                try:
+                    # 尝试直接转为int
+                    y[os_col] = os_col_data.astype(int)
+                    print(f"🏷️ 将生存状态从字符串转换为数值")
+                except Exception as e:
+                    # 显示未映射的值
+                    unmapped_values = os_col_data[y[os_col].isnull()].unique()
+                    raise ValueError(f"OS列无法转换为0/1变量，未映射的值: {unmapped_values}")
+            else:
+                print(f"🏷️ 将生存状态从字符串转换为数值（映射成功）")
+        else:
+            # 若已为数值，确保为0/1
+            y[os_col] = os_col_data.apply(lambda v: 1 if v == 1 else 0)
+            print(f"🏷️ 生存状态已为数值，确保为0/1格式")
+        
+        # 验证处理结果
+        unique_os_values = y[os_col].unique()
+        if not all(val in [0, 1] for val in unique_os_values):
+            raise ValueError(f"生存状态处理失败，包含非0/1值: {unique_os_values}")
+        
+        # 检查时间值是否合理
+        if (y[os_time_col] < 0).any():
+            warnings.warn("检测到负的生存时间值")
+        
+        # 将处理后的数据添加到nadata.Meta中
+        # 只将生存状态列赋值给target_col
+        nadata.Meta['Event'] = y[os_col]
+    
+        # 更新原始的生存时间列
+        nadata.Meta['Time'] = y[os_time_col]
+        
+        print(f"✅ 生存数据处理完成")
+        print(f"   - 生存状态: {os_col} -> Event")
+        print(f"   - 生存时间: '{os_time_col}'-> Time (单位: 月)")
+        print(f"   - 数据形状: {nadata.Meta['Event'].shape}")
+        print(f"   - 生存状态分布: {nadata.Meta['Event'].value_counts().to_dict()}")
+        return nadata
+    
+    @staticmethod
     def fillna(X, method: str = "mean", fill_value: float = 0):
         """
         处理缺失值

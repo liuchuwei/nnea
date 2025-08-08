@@ -14,7 +14,7 @@ print("🚀 开始nnea模型实验...")
 # 读取nnea配置文件
 print("⚙️ 读取nnea配置文件...")
 try:
-    nnea_config = toml.load("./config/nnea_config.toml")
+    nnea_config = toml.load("./config/nnea_classification_config.toml")
     print("✅ 配置文件读取成功")
 except Exception as e:
     print(f"❌ 配置文件读取失败: {e}")
@@ -29,7 +29,7 @@ print("✅ 全局随机种子设置完成")
 print("📂 加载数据...")
 try:
     nadata = na.nadata()
-    nadata.load(filepath="./datasets/tumor_imm/ccRCC_immunotherapy.pkl")
+    nadata.load(filepath="./datasets/tumor_imm/melanoma_immunotherapy.pkl")
     print("✅ 预处理后的nadata对象加载完成，数据形状:", nadata.X.shape)
 except Exception as e:
     print(f"❌ 数据加载失败: {e}")
@@ -186,7 +186,7 @@ nadata.Model["nnea_model"] = nnea_result
 
 # 保存nadata对象到文件（使用配置中的输出目录）
 try:
-    save_path = os.path.join(nnea_config['global']['outdir'], "ccRCC_imm.pkl")
+    save_path = os.path.join(nnea_config['global']['outdir'], "melanoma_imm.pkl")
     nadata.save(save_path, format="pickle", save_data=True)
     print(f"✅ 已完成nnea模型训练，并保存到: {save_path}")
 except Exception as e:
@@ -196,7 +196,7 @@ except Exception as e:
 print("🔄 重新加载nadata对象...")
 try:
     nadata_reloaded = na.nadata()
-    load_path = os.path.join(nnea_config['global']['outdir'], "ccRCC_imm.pkl")
+    load_path = os.path.join(nnea_config['global']['outdir'], "melanoma_imm.pkl")
     nadata_reloaded.load(filepath=load_path)
     print(f"✅ 数据重加载成功: {load_path}")
 except Exception as e:

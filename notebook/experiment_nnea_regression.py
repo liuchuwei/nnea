@@ -14,7 +14,7 @@ print("🚀 开始nnea模型实验...")
 # 读取nnea配置文件
 print("⚙️ 读取nnea配置文件...")
 try:
-    nnea_config = toml.load("./config/nnea_config.toml")
+    nnea_config = toml.load("./config.toml")
     print("✅ 配置文件读取成功")
 except Exception as e:
     print(f"❌ 配置文件读取失败: {e}")
@@ -29,7 +29,7 @@ print("✅ 全局随机种子设置完成")
 print("📂 加载数据...")
 try:
     nadata = na.nadata()
-    nadata.load(filepath="./datasets/tumor_imm/bladder_immunotherapy.pkl")
+    nadata.load(filepath="./datasets/cell_drug/PACLITAXEL_drug.pkl")
     print("✅ 预处理后的nadata对象加载完成，数据形状:", nadata.X.shape)
 except Exception as e:
     print(f"❌ 数据加载失败: {e}")
@@ -52,8 +52,7 @@ nadata.X = X
 
 # 处理标签
 print("🏷️ 处理标签...")
-y = nadata.Meta['binaryResponse']
-y = y.map({'SD/PD': 0, 'CR/PR': 1})
+y = nadata.Meta['auc']
 nadata.Meta['target'] = y  # 模型默认使用target
 
 # 数据分割
@@ -63,7 +62,7 @@ try:
         nadata,
         test_size=0.2,
         random_state=42,
-        strategy="stratified"
+        strategy="random"
     )
     print("✅ 数据分割完成")
 except Exception as e:
@@ -99,14 +98,16 @@ try:
     # 检查是否启用tailor策略
     training_config = nnea_config.get('training', {})
     tailor_enabled = training_config.get('tailor', False)
-    
+
     if tailor_enabled:
-        print(f"✂️ 启用tailor策略: tailor_epoch={training_config.get('tailor_epoch', 20)}, tailor_geneset={training_config.get('tailor_geneset', 2)}")
-    
+        print(
+            f"✂️ 启用tailor策略: tailor_epoch={training_config.get('tailor_epoch', 20)}, tailor_geneset={training_config.get('tailor_geneset', 2)}")
+
+
     train_results = na.train(nadata, verbose=2)
     print("✅ 模型训练完成")
     print(f"📊 训练结果: {train_results}")
-    
+
     # 如果使用了tailor策略，显示裁剪信息
     if tailor_enabled and isinstance(train_results, dict) and 'tailor_info' in train_results:
         tailor_info = train_results['tailor_info']
@@ -115,13 +116,7 @@ try:
         print(f"   - 每次裁剪基因集数量: {tailor_info['tailor_geneset']}")
         print(f"   - 总训练阶段数: {tailor_info['total_stages']}")
         print(f"   - 最终基因集数量: {tailor_info['final_geneset_count']}")
-        
-        # 显示每个阶段的裁剪历史
-        if 'tailor_history' in train_results:
-            print(f"   - 裁剪历史:")
-            for i, history in enumerate(train_results['tailor_history']):
-                print(f"     阶段{i+1}: epoch {history['epoch']}, 移除基因集 {history['removed_genesets']}, 保留基因集数量 {history['num_genesets_after']}")
-        
+
 except Exception as e:
     print(f"❌ 模型训练失败: {e}")
     print(f"   错误类型: {type(e).__name__}")
@@ -144,20 +139,9 @@ print("🔮 进行模型预测...")
 try:
     # 使用nnea包内的predict函数
     from nnea import predict
+
     prediction_results = predict(nadata, split='test')
-    
-    # 检查预测结果
-    if prediction_results.get('error'):
-        print(f"❌ 预测失败: {prediction_results['error']}")
-        y_test = None
-        y_pred = None
-        y_proba = None
-    else:
-        y_test = prediction_results['y_test']
-        y_pred = prediction_results['y_pred']
-        y_proba = prediction_results['y_proba']
-        print("✅ 模型预测完成")
-        
+
 except Exception as e:
     print(f"❌ 模型预测失败: {e}")
     y_test = None
@@ -170,12 +154,7 @@ nnea_result = {
     "model_config": nnea_config,
     "train_results": train_results,
     "eval_results": eval_results,
-    "test_auc": roc_auc_score(y_test, y_proba) if y_test is not None and y_proba is not None else None,
-    "test_report": classification_report(y_test, y_pred,
-                                         output_dict=True) if y_test is not None and y_pred is not None else None,
-    "test_pred": y_pred,
-    "test_proba": y_proba,
-    "test_true": y_test
+    "test_results": prediction_results
 }
 
 # 保存到nadata对象
@@ -186,7 +165,7 @@ nadata.Model["nnea_model"] = nnea_result
 
 # 保存nadata对象到文件（使用配置中的输出目录）
 try:
-    save_path = os.path.join(nnea_config['global']['outdir'], "bladder_imm.pkl")
+    save_path = os.path.join(nnea_config['global']['outdir'], "melanoma_imm.pkl")
     nadata.save(save_path, format="pickle", save_data=True)
     print(f"✅ 已完成nnea模型训练，并保存到: {save_path}")
 except Exception as e:
@@ -196,7 +175,7 @@ except Exception as e:
 print("🔄 重新加载nadata对象...")
 try:
     nadata_reloaded = na.nadata()
-    load_path = os.path.join(nnea_config['global']['outdir'], "bladder_imm.pkl")
+    load_path = os.path.join(nnea_config['global']['outdir'], "melanoma_imm.pkl")
     nadata_reloaded.load(filepath=load_path)
     print(f"✅ 数据重加载成功: {load_path}")
 except Exception as e:
