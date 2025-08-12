@@ -1,6 +1,6 @@
 """
-工具函数模块
-提供各种辅助功能和工具函数
+Utility Functions Module
+Provides various auxiliary functions and utility functions
 """
 
 from .metrics import *

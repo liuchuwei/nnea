@@ -1,5 +1,3 @@
-"""
-基础绘图模块
-"""
+# Basic plotting module
 
-# 基础绘图功能 
+# Basic plotting functionality 

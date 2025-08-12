@@ -93,7 +93,9 @@ class NNEAModel(nn.Module):
         self.assist_config = nnea_config.get('assist_layer', {})
         self.use_assist_in_init = self.assist_config.get('use_in_init', True)
         self.assist_dropout = self.assist_config.get('dropout', 0.1)
-        
+        self.assist_output = self.assist_config.get('output', 2)
+        self.assist_type = self.assist_config.get('type', "rec")
+
         # TrainableGeneSetLayer参数 - 从nnea.geneset_layer获取
         geneset_config = nnea_config.get('geneset_layer', {})
         self.min_set_size = geneset_config.get('min_set_size', 10)
@@ -132,7 +134,7 @@ class NNEAModel(nn.Module):
 
         # 构建辅助层（assist_layer）- 用于初始化时直接映射概率
         self.assist_layer = nn.Sequential(
-            nn.Linear(self.num_genesets, self.output_dim),
+            nn.Linear(self.num_genesets, self.assist_output),
             nn.Dropout(self.assist_dropout),
         )
         
@@ -247,10 +249,9 @@ class NNEAModel(nn.Module):
             # 使用辅助层直接映射概率
             x = self.assist_layer(geneset_output)
             # 根据任务类型决定是否输出概率
-            if self._is_classification_task():
+            if self.assist_type == "classification":
                 # 对于分类任务，应用log_softmax
                 x = F.log_softmax(x, dim=1)
-                x = torch.log(x + 1e-8)  # 添加小值避免log(0)
             # 对于回归、生存分析等任务，直接返回原始输出
         else:
             # 使用focus_layer（集成hidden_layer、attention_layer和output_layer）

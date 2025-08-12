@@ -120,7 +120,9 @@ class TrainableGeneSetLayer(nn.Module):
         super().__init__()
         self.num_genes = num_genes
         self.num_sets = num_sets
-        self.alpha = nn.Parameter(torch.tensor(alpha))
+        # 限制alpha的初始值范围，避免数值问题
+        safe_alpha = torch.clamp(torch.tensor(alpha), min=-3.0, max=3.0)
+        self.alpha = nn.Parameter(safe_alpha)
         self.is_deep_layer = is_deep_layer
         self.layer_index = layer_index
         self.piror_knowledge = piror_knowledge
@@ -198,6 +200,10 @@ class TrainableGeneSetLayer(nn.Module):
         # 获取基因指示矩阵
         indicators = self.get_set_indicators()
 
+        # 初始化损失变量
+        size_min_loss = torch.tensor(0.0, device=indicators.device)
+        size_max_loss = torch.tensor(0.0, device=indicators.device)
+
         if self.piror_knowledge is None or not (hasattr(self, 'freeze_piror') and self.freeze_piror):
             # 计算每个基因集的"基因数"（期望值）
             set_sizes = torch.sum(indicators, dim=1)
@@ -207,8 +213,6 @@ class TrainableGeneSetLayer(nn.Module):
 
             # 约束2: 防止基因集过大
             size_max_loss = F.relu(set_sizes - self.max_set_size).mean()
-        else:
-            size_min_loss, size_max_loss = 0, 0
 
         # 约束3: 鼓励清晰的成员关系（二值化）
         safe_log = torch.log(torch.clamp(indicators, min=1e-8))
@@ -220,10 +224,10 @@ class TrainableGeneSetLayer(nn.Module):
             overlap_matrix = torch.mm(normalized_indicators, normalized_indicators.t())
             diversity_loss = torch.triu(overlap_matrix, diagonal=1).sum() / (self.num_sets * (self.num_sets - 1) // 2)
         else:
-            diversity_loss = 0
+            diversity_loss = torch.tensor(0.0, device=indicators.device)
 
         if self.is_deep_layer:
-            exponent = torch.tensor(-self.layer_index * 0.5, device=size_min_loss.device)
+            exponent = torch.tensor(-self.layer_index * 0.5, device=indicators.device)
             depth_loss = torch.exp(exponent) * (size_min_loss + size_max_loss)
             base_loss = 0.05 * depth_loss + 0.2 * entropy_loss + 0.5 * diversity_loss
         else:
@@ -304,7 +308,9 @@ class TrainableGeneSetLayer(nn.Module):
 
         # 计算正集加权
         clamped_input = torch.clamp(R_sorted * sorted_indicators, min=1e-8, max=1e4)
-        weighted_pos = clamped_input ** torch.sigmoid(self.alpha)
+        # 限制alpha的范围，避免数值溢出
+        safe_alpha = torch.clamp(torch.sigmoid(self.alpha), min=-5.0, max=5.0)
+        weighted_pos = clamped_input ** safe_alpha
         sum_weighted_pos = torch.sum(weighted_pos, dim=2, keepdim=True)
 
         # 计算正集累积分布

@@ -1,40 +1,37 @@
 """
-数据增强模块（na.au）
-包含数据扰动、噪声添加、数据平衡等功能
+Data Augmentation Module (na.au)
+Contains data perturbation, noise addition, data balancing and other functions
 """
 
 import numpy as np
 import pandas as pd
 from typing import Optional, Union, List
-from imblearn.over_sampling import SMOTE, ADASYN, BorderlineSMOTE
-from imblearn.under_sampling import RandomUnderSampler, TomekLinks
-from imblearn.combine import SMOTEENN, SMOTETomek
 import warnings
 
 
 class au:
     """
-    数据增强类，提供各种数据增强方法
+    Data Augmentation Class, provides various data augmentation methods
     """
     
     @staticmethod
     def add_noise(nadata, method: str = "gaussian", **kwargs):
         """
-        添加噪声
+        Add Noise
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         method : str
-            噪声类型：'gaussian', 'poisson', 'dropout'
+            Noise type: 'gaussian', 'poisson', 'dropout'
         **kwargs : 
-            其他参数
+            Other parameters
             
         Returns:
         --------
         nadata
-            添加噪声后的nadata对象
+            nadata object with added noise
         """
         if nadata.X is None:
             return nadata
@@ -42,19 +39,19 @@ class au:
         X = nadata.X.copy()
         
         if method == "gaussian":
-            # 高斯噪声
+            # Gaussian noise
             std = kwargs.get('std', 0.1)
             noise = np.random.normal(0, std, X.shape)
             X_noisy = X + noise
             
         elif method == "poisson":
-            # 泊松噪声
+            # Poisson noise
             intensity = kwargs.get('intensity', 0.1)
             noise = np.random.poisson(intensity, X.shape)
             X_noisy = X + noise
             
         elif method == "dropout":
-            # Dropout噪声
+            # Dropout noise
             rate = kwargs.get('rate', 0.1)
             mask = np.random.binomial(1, 1-rate, X.shape)
             X_noisy = X * mask
@@ -66,25 +63,25 @@ class au:
         return nadata
     
     @staticmethod
-    def balance_data(nadata, method: str = "smote", target_col: str = "target", **kwargs):
+    def balance_data(nadata, method: str = "random_oversample", target_col: str = "target", **kwargs):
         """
-        数据平衡
+        Data Balancing
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         method : str
-            平衡方法：'smote', 'adasyn', 'borderline_smote', 'undersample', 'combine'
+            Balancing method: 'random_oversample', 'random_undersample'
         target_col : str
-            目标变量列名
+            Target variable column name
         **kwargs : 
-            其他参数
+            Other parameters
             
         Returns:
         --------
         nadata
-            平衡后的nadata对象
+            Balanced nadata object
         """
         if nadata.X is None or nadata.Meta is None:
             return nadata
@@ -92,42 +89,63 @@ class au:
         if target_col not in nadata.Meta.columns:
             raise ValueError(f"Target column '{target_col}' not found in Meta data")
         
-        X = nadata.X.T  # 转置为(样本数, 特征数)
+        X = nadata.X.T  # Transpose to (samples, features)
         y = nadata.Meta[target_col].values
         
-        if method == "smote":
-            # SMOTE过采样
-            k_neighbors = kwargs.get('k_neighbors', 5)
-            sampler = SMOTE(k_neighbors=k_neighbors, random_state=42)
+        # Calculate class distribution
+        unique_classes, class_counts = np.unique(y, return_counts=True)
+        majority_class = unique_classes[np.argmax(class_counts)]
+        minority_classes = unique_classes[unique_classes != majority_class]
+        
+        if method == "random_oversample":
+            # Simple random oversampling
+            max_count = np.max(class_counts)
+            X_resampled_list = []
+            y_resampled_list = []
             
-        elif method == "adasyn":
-            # ADASYN过采样
-            k_neighbors = kwargs.get('k_neighbors', 5)
-            sampler = ADASYN(k_neighbors=k_neighbors, random_state=42)
+            for class_label in unique_classes:
+                class_indices = np.where(y == class_label)[0]
+                if len(class_indices) < max_count:
+                    # Oversample minority classes
+                    oversampled_indices = np.random.choice(
+                        class_indices, 
+                        size=max_count, 
+                        replace=True
+                    )
+                else:
+                    oversampled_indices = class_indices
+                
+                X_resampled_list.append(X[oversampled_indices])
+                y_resampled_list.append(y[oversampled_indices])
             
-        elif method == "borderline_smote":
-            # Borderline SMOTE
-            k_neighbors = kwargs.get('k_neighbors', 5)
-            sampler = BorderlineSMOTE(k_neighbors=k_neighbors, random_state=42)
+            X_resampled = np.vstack(X_resampled_list)
+            y_resampled = np.concatenate(y_resampled_list)
             
-        elif method == "undersample":
-            # 欠采样
-            sampler = RandomUnderSampler(random_state=42)
+        elif method == "random_undersample":
+            # Simple random undersampling
+            min_count = np.min(class_counts)
+            X_resampled_list = []
+            y_resampled_list = []
             
-        elif method == "combine":
-            # 组合方法
-            if kwargs.get('method', 'smoteenn') == 'smoteenn':
-                sampler = SMOTEENN(random_state=42)
-            else:
-                sampler = SMOTETomek(random_state=42)
+            for class_label in unique_classes:
+                class_indices = np.where(y == class_label)[0]
+                # Undersample majority classes
+                undersampled_indices = np.random.choice(
+                    class_indices, 
+                    size=min_count, 
+                    replace=False
+                )
+                
+                X_resampled_list.append(X[undersampled_indices])
+                y_resampled_list.append(y[undersampled_indices])
+            
+            X_resampled = np.vstack(X_resampled_list)
+            y_resampled = np.concatenate(y_resampled_list)
                 
         else:
-            raise ValueError(f"Unsupported balancing method: {method}")
+            raise ValueError(f"Unsupported balancing method: {method}. Supported methods: 'random_oversample', 'random_undersample'")
         
-        # 执行采样
-        X_resampled, y_resampled = sampler.fit_resample(X, y)
-        
-        # 更新数据
+        # Update data
         nadata.X = X_resampled.T
         nadata.Meta = nadata.Meta.iloc[:len(y_resampled)].copy()
         nadata.Meta[target_col] = y_resampled
@@ -137,21 +155,21 @@ class au:
     @staticmethod
     def perturb_data(nadata, method: str = "random", **kwargs):
         """
-        数据扰动
+        Data Perturbation
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         method : str
-            扰动方法：'random', 'systematic', 'feature_wise'
+            Perturbation method: 'random', 'systematic', 'feature_wise'
         **kwargs : 
-            其他参数
+            Other parameters
             
         Returns:
         --------
         nadata
-            扰动后的nadata对象
+            Perturbed nadata object
         """
         if nadata.X is None:
             return nadata
@@ -159,21 +177,21 @@ class au:
         X = nadata.X.copy()
         
         if method == "random":
-            # 随机扰动
+            # Random perturbation
             scale = kwargs.get('scale', 0.1)
             perturbation = np.random.uniform(-scale, scale, X.shape)
             X_perturbed = X + perturbation
             
         elif method == "systematic":
-            # 系统性扰动
+            # Systematic perturbation
             bias = kwargs.get('bias', 0.05)
             X_perturbed = X + bias
             
         elif method == "feature_wise":
-            # 特征级扰动
+            # Feature-wise perturbation
             scale = kwargs.get('scale', 0.1)
             perturbation = np.random.normal(0, scale, X.shape)
-            # 对每个特征应用不同的扰动
+            # Apply different perturbation to each feature
             for i in range(X.shape[0]):
                 feature_scale = np.random.uniform(0.5, 1.5) * scale
                 perturbation[i, :] *= feature_scale
@@ -188,21 +206,21 @@ class au:
     @staticmethod
     def augment_single_cell(nadata, method: str = "synthetic", **kwargs):
         """
-        单细胞数据增强
+        Single-cell Data Augmentation
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         method : str
-            增强方法：'synthetic', 'mixup', 'cutmix'
+            Augmentation method: 'synthetic', 'mixup', 'cutmix'
         **kwargs : 
-            其他参数
+            Other parameters
             
         Returns:
         --------
         nadata
-            增强后的nadata对象
+            Augmented nadata object
         """
         if nadata.X is None:
             return nadata
@@ -211,20 +229,20 @@ class au:
         n_genes, n_cells = X.shape
         
         if method == "synthetic":
-            # 合成细胞生成
+            # Synthetic cell generation
             n_synthetic = kwargs.get('n_synthetic', n_cells // 2)
             synthetic_cells = np.zeros((n_genes, n_synthetic))
             
             for i in range(n_synthetic):
-                # 随机选择两个细胞进行混合
+                # Randomly select two cells for mixing
                 cell1, cell2 = np.random.choice(n_cells, 2, replace=False)
                 alpha = np.random.uniform(0.3, 0.7)
                 synthetic_cells[:, i] = alpha * X[:, cell1] + (1 - alpha) * X[:, cell2]
             
-            # 合并原始数据和合成数据
+            # Combine original data and synthetic data
             X_augmented = np.concatenate([X, synthetic_cells], axis=1)
             
-            # 更新Meta数据
+            # Update Meta data
             if nadata.Meta is not None:
                 original_meta = nadata.Meta.copy()
                 synthetic_meta = original_meta.iloc[:n_synthetic].copy()
@@ -232,19 +250,19 @@ class au:
                 nadata.Meta = pd.concat([original_meta, synthetic_meta], ignore_index=True)
             
         elif method == "mixup":
-            # Mixup增强
+            # Mixup augmentation
             alpha = kwargs.get('alpha', 0.2)
             n_augmented = kwargs.get('n_augmented', n_cells)
             X_augmented = np.zeros((n_genes, n_augmented))
             
             for i in range(n_augmented):
-                # 随机选择两个细胞
+                # Randomly select two cells
                 cell1, cell2 = np.random.choice(n_cells, 2, replace=False)
-                # 生成混合权重
+                # Generate mixing weights
                 lam = np.random.beta(alpha, alpha)
                 X_augmented[:, i] = lam * X[:, cell1] + (1 - lam) * X[:, cell2]
             
-            # 更新Meta数据
+            # Update Meta data
             if nadata.Meta is not None:
                 original_meta = nadata.Meta.copy()
                 augmented_meta = original_meta.iloc[:n_augmented].copy()
@@ -252,22 +270,22 @@ class au:
                 nadata.Meta = pd.concat([original_meta, augmented_meta], ignore_index=True)
                 
         elif method == "cutmix":
-            # CutMix增强
+            # CutMix augmentation
             n_augmented = kwargs.get('n_augmented', n_cells)
             X_augmented = np.zeros((n_genes, n_augmented))
             
             for i in range(n_augmented):
-                # 随机选择两个细胞
+                # Randomly select two cells
                 cell1, cell2 = np.random.choice(n_cells, 2, replace=False)
-                # 随机选择基因子集
+                # Randomly select gene subset
                 n_cut = np.random.randint(1, n_genes // 2)
                 cut_indices = np.random.choice(n_genes, n_cut, replace=False)
                 
-                # 混合基因表达
+                # Mix gene expression
                 X_augmented[:, i] = X[:, cell1].copy()
                 X_augmented[cut_indices, i] = X[cut_indices, cell2]
             
-            # 更新Meta数据
+            # Update Meta data
             if nadata.Meta is not None:
                 original_meta = nadata.Meta.copy()
                 augmented_meta = original_meta.iloc[:n_augmented].copy()
@@ -283,21 +301,21 @@ class au:
     @staticmethod
     def time_series_augmentation(nadata, method: str = "temporal", **kwargs):
         """
-        时间序列数据增强
+        Time Series Data Augmentation
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         method : str
-            增强方法：'temporal', 'frequency', 'noise_injection'
+            Augmentation method: 'temporal', 'frequency', 'noise_injection'
         **kwargs : 
-            其他参数
+            Other parameters
             
         Returns:
         --------
         nadata
-            增强后的nadata对象
+            Augmented nadata object
         """
         if nadata.X is None:
             return nadata
@@ -305,14 +323,14 @@ class au:
         X = nadata.X.copy()
         
         if method == "temporal":
-            # 时间窗口滑动
+            # Temporal window sliding
             window_size = kwargs.get('window_size', 3)
             stride = kwargs.get('stride', 1)
             
             augmented_data = []
             for i in range(0, X.shape[1] - window_size + 1, stride):
                 window_data = X[:, i:i+window_size]
-                # 计算窗口内的统计特征
+                # Calculate statistical features within the window
                 mean_data = np.mean(window_data, axis=1, keepdims=True)
                 augmented_data.append(mean_data)
             
@@ -321,23 +339,23 @@ class au:
                 nadata.X = X_augmented
                 
         elif method == "frequency":
-            # 频域增强
+            # Frequency domain augmentation
             from scipy.fft import fft, ifft
             
-            # 对每个基因进行FFT
+            # Perform FFT on each gene
             X_fft = fft(X, axis=1)
             
-            # 添加频域噪声
+            # Add frequency domain noise
             noise_scale = kwargs.get('noise_scale', 0.1)
             noise = np.random.normal(0, noise_scale, X_fft.shape)
             X_fft_noisy = X_fft + noise
             
-            # 逆FFT
+            # Inverse FFT
             X_augmented = np.real(ifft(X_fft_noisy, axis=1))
             nadata.X = X_augmented
             
         elif method == "noise_injection":
-            # 噪声注入
+            # Noise injection
             noise_type = kwargs.get('noise_type', 'gaussian')
             noise_scale = kwargs.get('noise_scale', 0.1)
             

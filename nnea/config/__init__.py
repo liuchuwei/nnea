@@ -1,6 +1,6 @@
 """
-配置模块
-提供配置管理和参数设置功能
+Configuration Module
+Provides configuration management and parameter setting functionality
 """
 
 from .settings import *

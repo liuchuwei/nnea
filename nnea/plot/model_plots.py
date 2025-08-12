@@ -1,5 +1,3 @@
-"""
-模型绘图模块
-"""
+# Model plotting module
 
-# 模型相关的绘图功能 
+# Model-related plotting functionality 

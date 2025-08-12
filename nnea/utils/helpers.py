@@ -1,6 +1,6 @@
 """
-辅助函数模块
-提供各种工具函数和辅助功能
+Helper Functions Module
+Provides various utility functions and helper functionality
 """
 
 import os
@@ -19,13 +19,13 @@ logger = logging.getLogger(__name__)
 
 def set_global_seed(seed: int = 42, deterministic: bool = True) -> None:
     """
-    设置全局随机种子，确保实验的可重复性
+    Set global random seed to ensure experiment reproducibility
     
     Args:
-        seed: 随机种子值
-        deterministic: 是否使用确定性算法（可能影响性能但确保可重复性）
+        seed: Random seed value
+        deterministic: Whether to use deterministic algorithms (may affect performance but ensures reproducibility)
     """
-    logger.info(f"设置全局随机种子: {seed}")
+    logger.info(f"Setting global random seed: {seed}")
     
     # Python random
     random.seed(seed)
@@ -36,30 +36,30 @@ def set_global_seed(seed: int = 42, deterministic: bool = True) -> None:
     # PyTorch random
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)  # 多GPU情况
+    torch.cuda.manual_seed_all(seed)  # Multi-GPU case
     
     if deterministic:
-        # 设置PyTorch的确定性算法（可能影响性能但确保可重复性）
+        # Set PyTorch deterministic algorithms (may affect performance but ensures reproducibility)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         
-        # 设置环境变量以确保完全确定性
+        # Set environment variables to ensure complete determinism
         os.environ['PYTHONHASHSEED'] = str(seed)
         os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     
-    logger.info("全局随机种子设置完成")
+    logger.info("Global random seed setup completed")
 
 def get_seed_from_config(config: Dict[str, Any]) -> int:
     """
-    从配置中获取随机种子
+    Get random seed from configuration
     
     Args:
-        config: 配置字典
+        config: Configuration dictionary
         
     Returns:
-        随机种子值，如果未找到则返回默认值42
+        Random seed value, returns default value 42 if not found
     """
-    # 尝试从不同位置获取种子
+    # Try to get seed from different locations
     seed = config.get('global', {}).get('seed', None)
     if seed is None:
         seed = config.get('seed', None)
@@ -72,30 +72,30 @@ def get_seed_from_config(config: Dict[str, Any]) -> int:
 
 def ensure_reproducibility(config: Dict[str, Any], deterministic: bool = True) -> None:
     """
-    确保实验的可重复性
+    Ensure experiment reproducibility
     
     Args:
-        config: 配置字典
-        deterministic: 是否使用确定性算法
+        config: Configuration dictionary
+        deterministic: Whether to use deterministic algorithms
     """
     seed = get_seed_from_config(config)
     set_global_seed(seed, deterministic)
     
-    # 记录配置信息
-    logger.info(f"实验配置:")
-    logger.info(f"  随机种子: {seed}")
-    logger.info(f"  确定性模式: {deterministic}")
-    logger.info(f"  设备: {config.get('global', {}).get('device', 'auto')}")
+    # Log configuration information
+    logger.info(f"Experiment configuration:")
+    logger.info(f"  Random seed: {seed}")
+    logger.info(f"  Deterministic mode: {deterministic}")
+    logger.info(f"  Device: {config.get('global', {}).get('device', 'auto')}")
 
 
 def save_results(results: Dict[str, Any], filepath: str, format: str = "json") -> None:
     """
-    保存结果到文件
+    Save results to file
     
     Args:
-        results: 要保存的结果字典
-        filepath: 文件路径
-        format: 保存格式 ("json", "pickle", "csv")
+        results: Results dictionary to save
+        filepath: File path
+        format: Save format ("json", "pickle", "csv")
     """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     
@@ -111,22 +111,22 @@ def save_results(results: Dict[str, Any], filepath: str, format: str = "json") -
         else:
             pd.DataFrame(results).to_csv(filepath, index=False)
     else:
-        raise ValueError(f"不支持的格式: {format}")
+        raise ValueError(f"Unsupported format: {format}")
 
 
 def load_results(filepath: str, format: str = "json") -> Any:
     """
-    从文件加载结果
+    Load results from file
     
     Args:
-        filepath: 文件路径
-        format: 文件格式 ("json", "pickle", "csv")
+        filepath: File path
+        format: File format ("json", "pickle", "csv")
     
     Returns:
-        加载的数据
+        Loaded data
     """
     if not os.path.exists(filepath):
-        raise FileNotFoundError(f"文件不存在: {filepath}")
+        raise FileNotFoundError(f"File does not exist: {filepath}")
     
     if format == "json":
         with open(filepath, 'r', encoding='utf-8') as f:
@@ -137,7 +137,7 @@ def load_results(filepath: str, format: str = "json") -> Any:
     elif format == "csv":
         return pd.read_csv(filepath)
     else:
-        raise ValueError(f"不支持的格式: {format}")
+        raise ValueError(f"Unsupported format: {format}")
 
 
 def validate_data(data: Union[pd.DataFrame, np.ndarray], 
@@ -145,48 +145,48 @@ def validate_data(data: Union[pd.DataFrame, np.ndarray],
                  min_rows: int = 1,
                  max_missing_ratio: float = 0.5) -> bool:
     """
-    验证数据有效性
+    Validate data validity
     
     Args:
-        data: 输入数据
-        required_columns: 必需的列名
-        min_rows: 最小行数
-        max_missing_ratio: 最大缺失值比例
+        data: Input data
+        required_columns: Required column names
+        min_rows: Minimum number of rows
+        max_missing_ratio: Maximum missing value ratio
     
     Returns:
-        数据是否有效
+        Whether the data is valid
     """
     if isinstance(data, np.ndarray):
         data = pd.DataFrame(data)
     
-    # 检查行数
+    # Check number of rows
     if len(data) < min_rows:
-        raise ValueError(f"数据行数不足: {len(data)} < {min_rows}")
+        raise ValueError(f"Insufficient data rows: {len(data)} < {min_rows}")
     
-    # 检查必需列
+    # Check required columns
     if required_columns:
         missing_cols = set(required_columns) - set(data.columns)
         if missing_cols:
-            raise ValueError(f"缺少必需列: {missing_cols}")
+            raise ValueError(f"Missing required columns: {missing_cols}")
     
-    # 检查缺失值
+    # Check missing values
     missing_ratio = data.isnull().sum().sum() / (data.shape[0] * data.shape[1])
     if missing_ratio > max_missing_ratio:
-        raise ValueError(f"缺失值比例过高: {missing_ratio:.2f} > {max_missing_ratio}")
+        raise ValueError(f"Missing value ratio too high: {missing_ratio:.2f} > {max_missing_ratio}")
     
     return True
 
 
 def format_output(data: Any, output_format: str = "dict") -> Any:
     """
-    格式化输出
+    Format output
     
     Args:
-        data: 输入数据
-        output_format: 输出格式 ("dict", "dataframe", "array")
+        data: Input data
+        output_format: Output format ("dict", "dataframe", "array")
     
     Returns:
-        格式化后的数据
+        Formatted data
     """
     if output_format == "dict":
         if isinstance(data, pd.DataFrame):
@@ -210,39 +210,39 @@ def format_output(data: Any, output_format: str = "dict") -> Any:
         else:
             return np.array(data)
     else:
-        raise ValueError(f"不支持的输出格式: {output_format}")
+        raise ValueError(f"Unsupported output format: {output_format}")
 
 
 def create_logger(name: str, level: str = "INFO", 
                  log_file: Optional[str] = None) -> logging.Logger:
     """
-    创建日志记录器
+    Create logger
     
     Args:
-        name: 日志记录器名称
-        level: 日志级别
-        log_file: 日志文件路径
+        name: Logger name
+        level: Log level
+        log_file: Log file path
     
     Returns:
-        日志记录器
+        Logger
     """
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper()))
     
-    # 清除已有的处理器
+    # Clear existing handlers
     logger.handlers.clear()
     
-    # 创建格式化器
+    # Create formatter
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    # 控制台处理器
+    # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
     
-    # 文件处理器
+    # File handler
     if log_file:
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setFormatter(formatter)
@@ -253,36 +253,36 @@ def create_logger(name: str, level: str = "INFO",
 
 def ensure_directory(path: str) -> None:
     """
-    确保目录存在
+    Ensure directory exists
     
     Args:
-        path: 目录路径
+        path: Directory path
     """
     Path(path).mkdir(parents=True, exist_ok=True)
 
 
 def get_file_extension(filepath: str) -> str:
     """
-    获取文件扩展名
+    Get file extension
     
     Args:
-        filepath: 文件路径
+        filepath: File path
     
     Returns:
-        文件扩展名
+        File extension
     """
     return Path(filepath).suffix.lower()
 
 
 def is_numeric_data(data: Union[pd.DataFrame, np.ndarray]) -> bool:
     """
-    检查数据是否为数值型
+    Check if data is numeric
     
     Args:
-        data: 输入数据
+        data: Input data
     
     Returns:
-        是否为数值型数据
+        Whether the data is numeric
     """
     if isinstance(data, np.ndarray):
         return np.issubdtype(data.dtype, np.number)
@@ -294,13 +294,13 @@ def is_numeric_data(data: Union[pd.DataFrame, np.ndarray]) -> bool:
 
 def convert_to_numeric(data: Union[pd.DataFrame, np.ndarray]) -> Union[pd.DataFrame, np.ndarray]:
     """
-    将数据转换为数值型
+    Convert data to numeric type
     
     Args:
-        data: 输入数据
+        data: Input data
     
     Returns:
-        转换后的数值型数据
+        Converted numeric data
     """
     if isinstance(data, pd.DataFrame):
         return data.select_dtypes(include=[np.number])

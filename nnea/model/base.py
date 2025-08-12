@@ -1,6 +1,6 @@
 """
-NNEA模型基类
-提供统一的模型接口和基础功能
+NNEA Model Base Class
+Provides unified model interface and basic functionality
 """
 
 import logging
@@ -14,16 +14,16 @@ logger = logging.getLogger(__name__)
 
 class BaseModel(ABC):
     """
-    NNEA模型基类
-    所有NNEA模型都应该继承此类
+    NNEA Model Base Class
+    All NNEA models should inherit from this class
     """
     
     def __init__(self, config: Dict[str, Any]):
         """
-        初始化模型
+        Initialize model
         
         Args:
-            config: 模型配置字典
+            config: Model configuration dictionary
         """
         self.config = config
         self.model = None
@@ -34,65 +34,65 @@ class BaseModel(ABC):
     @abstractmethod
     def build(self, nadata) -> None:
         """
-        构建模型
+        Build model
         
         Args:
-            nadata: nadata对象，包含数据和配置信息
+            nadata: nadata object, containing data and configuration information
         """
         pass
     
     @abstractmethod
     def train(self, nadata, **kwargs) -> Dict[str, Any]:
         """
-        训练模型
+        Train model
         
         Args:
-            nadata: nadata对象
-            **kwargs: 额外参数
+            nadata: nadata object
+            **kwargs: Additional parameters
             
         Returns:
-            训练结果字典
+            Training results dictionary
         """
         pass
     
     @abstractmethod
     def predict(self, nadata) -> np.ndarray:
         """
-        模型预测
+        Model prediction
         
         Args:
-            nadata: nadata对象
+            nadata: nadata object
             
         Returns:
-            预测结果
+            Prediction results
         """
         pass
     
     @abstractmethod
     def evaluate(self, nadata, split='test') -> Dict[str, float]:
         """
-        模型评估
+        Model evaluation
         
         Args:
-            nadata: nadata对象
-            split: 评估的数据集分割
+            nadata: nadata object
+            split: Dataset split for evaluation
             
         Returns:
-            评估指标字典
+            Evaluation metrics dictionary
         """
         pass
     
     @abstractmethod
     def explain(self, nadata, method='importance') -> Dict[str, Any]:
         """
-        模型解释
+        Model explanation
         
         Args:
-            nadata: nadata对象
-            method: 解释方法
+            nadata: nadata object
+            method: Explanation method
             
         Returns:
-            解释结果字典
+            Explanation results dictionary
         """
         pass
     

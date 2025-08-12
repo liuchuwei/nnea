@@ -257,12 +257,12 @@ class NNEARegresser(BaseModel):
         if not continue_training:
             self.logger.info("🔧 开始模型初始化阶段 - 训练基因集层指示矩阵...")
             
-            # 根据配置决定是否在初始化阶段启用assist_layer
-            if self.model.use_assist_in_init:
-                self.model.set_assist_layer_mode(True)
-                self.logger.info("📊 初始化阶段：启用辅助层，直接映射geneset输出为概率")
+            # 根据配置决定是否在初始化阶段启用decoder
+            if self.model.use_decoder_in_init:
+                self.model.set_decoder_mode(True)
+                self.logger.info("📊 初始化阶段：启用解码器，直接映射geneset输出为概率")
             else:
-                self.model.set_assist_layer_mode(False)
+                self.model.set_decoder_mode(False)
                 self.logger.info("📊 初始化阶段：使用标准模式，使用focus_layer进行预测")
             
             init_results = self._initialize_geneset_layer(train_loader, optimizer, verbose)

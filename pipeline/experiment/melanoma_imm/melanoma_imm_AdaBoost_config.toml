@@ -1,0 +1,56 @@
+# AdaBoostClassifier model configuration file
+# Global configuration
+[global]
+    model = "adaboost"
+    device = "auto"  # Auto-detect GPU/CPU
+    seed = 42
+    inputfl = "./datasets/tumor_imm/melanoma_immunotherapy.pkl"
+    outputfl = "melanoma_imm_AdaBoost.pkl"
+    outdir = "experiment/melanoma_imm_AdaBoost"
+
+# Dataset configuration
+[dataset]
+    test_size = 0.2
+    val_size = 0.2
+    random_state = 42
+
+# AdaBoostClassifier model configuration
+[adaboost]
+    # Basic parameters
+    n_estimators = [50, 100, 200]  # Number of weak learners
+    learning_rate = [0.01, 0.1, 0.5, 1.0]  # Learning rate
+    algorithm = ["SAMME", "SAMME.R"]  # Algorithm type
+
+    # Other optional parameters
+    random_state = 42  # Random seed
+
+    # Cross-validation configuration
+    cv_folds = 5  # Cross-validation folds
+    cv_scoring = "roc_auc"  # Evaluation metric
+    n_jobs = 8  # Number of parallel jobs
+
+    # Feature selection configuration - AdaBoost usually doesn't need standardization, but needs feature selection
+    feature_selection = true
+    selection_method = "lasso"
+    n_features = 100  # AdaBoost moderate number of features
+    selection_alpha = 0.01
+
+    # Data preprocessing configuration - AdaBoost is not sensitive to feature scale, but needs to handle missing values
+    [adaboost.preprocessing]
+        fill_na = true
+        fill_method = "mean"
+        scale_data = false  # AdaBoost doesn't need standardization
+        scale_method = "standard"
+
+# Training configuration
+[training]
+    verbose = 1
+    save_model = true
+    save_format = "pickle"
+    save_data = true
+
+# Evaluation configuration
+[evaluation]
+    metrics = ["roc_auc", "classification_report"]
+    save_predictions = true
+    save_probabilities = true 

@@ -20,23 +20,23 @@ import logging
 
 class NeuralUMAP(nn.Module):
     """
-    基于神经网络的UMAP实现
+    Neural network-based UMAP implementation
     
-    这个实现使用编码器-解码器架构来学习高维数据到低维空间的映射，
-    同时保持数据的局部和全局结构。
+    This implementation uses an encoder-decoder architecture to learn mappings from high-dimensional data to low-dimensional space,
+    while preserving both local and global structure of the data.
     """
     
     def __init__(self, input_dim: int, embedding_dim: int = 2, 
                  hidden_dims: List[int] = [128, 64, 32], 
                  dropout: float = 0.1):
         """
-        初始化神经网络UMAP模型
+        Initialize neural network UMAP model
         
         Args:
-            input_dim: 输入数据维度
-            embedding_dim: 嵌入空间维度（通常为2用于可视化）
-            hidden_dims: 隐藏层维度列表
-            dropout: Dropout比率
+            input_dim: Input data dimension
+            embedding_dim: Embedding space dimension (usually 2 for visualization)
+            hidden_dims: List of hidden layer dimensions
+            dropout: Dropout ratio
         """
         super(NeuralUMAP, self).__init__()
         
@@ -44,7 +44,7 @@ class NeuralUMAP(nn.Module):
         self.embedding_dim = embedding_dim
         self.hidden_dims = hidden_dims
         
-        # 编码器：高维 -> 低维
+        # Encoder: high-dimensional -> low-dimensional
         encoder_layers = []
         prev_dim = input_dim
         
@@ -57,12 +57,12 @@ class NeuralUMAP(nn.Module):
             ])
             prev_dim = hidden_dim
         
-        # 输出层
+        # Output layer
         encoder_layers.append(nn.Linear(prev_dim, embedding_dim))
         
         self.encoder = nn.Sequential(*encoder_layers)
         
-        # 解码器：低维 -> 高维（可选，用于重构）
+        # Decoder: low-dimensional -> high-dimensional (optional, for reconstruction)
         decoder_layers = []
         prev_dim = embedding_dim
         
@@ -75,45 +75,45 @@ class NeuralUMAP(nn.Module):
             ])
             prev_dim = hidden_dim
         
-        # 重构输出层
+        # Reconstruction output layer
         decoder_layers.append(nn.Linear(prev_dim, input_dim))
         
         self.decoder = nn.Sequential(*decoder_layers)
     
     def forward(self, x):
-        """前向传播"""
+        """Forward propagation"""
         encoded = self.encoder(x)
         decoded = self.decoder(encoded)
         return encoded, decoded
     
     def encode(self, x):
-        """仅编码"""
+        """Encode only"""
         return self.encoder(x)
     
     def decode(self, z):
-        """仅解码"""
+        """Decode only"""
         return self.decoder(z)
 
 
 class UMAPLoss(nn.Module):
     """
-    UMAP损失函数实现，使用PCA寻找最近邻对（优化版本）
+    UMAP loss function implementation, using PCA to find nearest neighbor pairs (optimized version)
     
-    参考nn_umap.py的实现，添加缓存机制提升训练效率
+    Based on nn_umap.py implementation, with caching mechanism to improve training efficiency
     """
     
     def __init__(self, min_dist: float = 0.1, a: float = 1.0, b: float = 1.0, 
                  n_neighbors: int = 15, pca_components: int = 50, use_vectorized: bool = True, debug: bool = False):
         """
-        初始化UMAP损失函数
+        Initialize UMAP loss function
         
         Args:
-            min_dist: 最小距离参数
-            a, b: UMAP的a和b参数
-            n_neighbors: 邻居数量
-            pca_components: PCA组件数量
-            use_vectorized: 是否使用向量化实现（更高效）
-            debug: 是否启用调试模式
+            min_dist: Minimum distance parameter
+            a, b: UMAP a and b parameters
+            n_neighbors: Number of neighbors
+            pca_components: Number of PCA components
+            use_vectorized: Whether to use vectorized implementation (more efficient)
+            debug: Whether to enable debug mode
         """
         super(UMAPLoss, self).__init__()
         self.min_dist = min_dist
@@ -125,26 +125,26 @@ class UMAPLoss(nn.Module):
         self.debug = debug
         self.pca = None
         self.original_data = None
-        # 添加缓存变量
+        # Add cache variables
         self.positive_pairs = None
         self.negative_pairs = None
         self.is_fitted = False
-        # 添加全局距离矩阵缓存
+        # Add global distance matrix cache
         self.global_distances = None
-        # 添加损失统计信息
+        # Add loss statistics
         self.loss_stats = {}
-        # 添加logger
+        # Add logger
         import logging
         self.logger = logging.getLogger(__name__)
         
     def set_umap_params(self, a: float = None, b: float = None, min_dist: float = None):
         """
-        设置UMAP参数
+        Set UMAP parameters
         
         Args:
-            a: UMAP的a参数
-            b: UMAP的b参数
-            min_dist: 最小距离参数
+            a: UMAP a parameter
+            b: UMAP b parameter
+            min_dist: Minimum distance parameter
         """
         if a is not None:
             self.a = a
@@ -152,15 +152,15 @@ class UMAPLoss(nn.Module):
             self.b = b
         if min_dist is not None:
             self.min_dist = min_dist
-        
-        self.logger.info(f"UMAP参数已更新: a={self.a}, b={self.b}, min_dist={self.min_dist}")
+            
+        self.logger.info(f"UMAP parameters updated: a={self.a}, b={self.b}, min_dist={self.min_dist}")
         
     def get_loss_stats(self):
         """
-        获取损失函数统计信息
+        Get loss function statistics
         
         Returns:
-            统计信息字典
+            Statistics dictionary
         """
         stats = {
             'a': self.a,
@@ -183,62 +183,62 @@ class UMAPLoss(nn.Module):
         
     def fit_pca(self, X: np.ndarray, nadata=None):
         """
-        使用PCA拟合数据并返回正样本和负样本索引（只计算一次）
+        Fit data using PCA and return positive and negative sample indices (computed only once)
         
         Args:
-            X: 原始高维数据
-            nadata: nadata对象，如果提供且包含预计算的PCA数据，则直接使用
+            X: Original high-dimensional data
+            nadata: nadata object, if provided and contains pre-computed PCA data, use directly
             
         Returns:
-            tuple: (pos_indices, neg_indices) 正样本和负样本索引数组
+            tuple: (pos_indices, neg_indices) Positive and negative sample index arrays
         """
         if self.is_fitted:
             return self.pos_indices, self.neg_indices
             
-        # 检查是否可以从nadata.uns中读取预计算的PCA数据
+        # Check if pre-computed PCA data can be read from nadata.uns
         X_pca = None
         
         if nadata is not None and hasattr(nadata, 'uns'):
-            # 检查是否有预计算的PCA数据
+            # Check if there is pre-computed PCA data
             if 'pca' in nadata.uns:
                 X_pca = nadata.uns['pca']
-                self.logger.info("从nadata.uns中读取预计算的PCA数据")
+                self.logger.info("Reading pre-computed PCA data from nadata.uns")
                 
-                # 确保PCA数据的形状正确
+                # Ensure PCA data shape is correct
                 if X_pca.shape[0] != X.shape[0]:
-                    self.logger.warning(f"PCA数据样本数({X_pca.shape[0]})与输入数据样本数({X.shape[0]})不匹配，重新计算")
+                    self.logger.warning(f"PCA data sample count ({X_pca.shape[0]}) does not match input data sample count ({X.shape[0]}), recalculating")
                     X_pca = None
             else:
-                self.logger.info("nadata.uns中未找到预计算的PCA数据")
+                self.logger.info("Pre-computed PCA data not found in nadata.uns")
         else:
-            self.logger.info("nadata对象为空或没有uns属性")
+            self.logger.info("nadata object is empty or has no uns attribute")
             
-        # 如果没有预计算的PCA数据，则重新计算
+        # If no pre-computed PCA data, recalculate
         if X_pca is None:
-            # 限制PCA组件数量不超过特征数量
+            # Limit PCA component count to not exceed feature count
             n_components = min(self.pca_components, X.shape[1])
             self.pca = PCA(n_components=n_components)
             self.pca.fit(X)
             
-            # 使用PCA降维
+            # Use PCA for dimensionality reduction
             X_pca = self.pca.transform(X)
-            self.logger.info(f"重新计算PCA，组件数: {n_components}")
+            self.logger.info(f"Recalculating PCA, component count: {n_components}")
         else:
-            self.logger.info(f"使用预计算的PCA数据，形状: {X_pca.shape}")
-            # 创建一个虚拟的PCA对象以保持兼容性
+            self.logger.info(f"Using pre-computed PCA data, shape: {X_pca.shape}")
+            # Create a virtual PCA object for compatibility
             self.pca = None
         
-        # 使用sklearn的NearestNeighbors寻找最近邻
+        # Use sklearn's NearestNeighbors to find nearest neighbors
         nbrs = NearestNeighbors(n_neighbors=self.n_neighbors + 1, algorithm='auto').fit(X_pca)
         distances, nbr_indices = nbrs.kneighbors(X_pca)
         
-        # 计算并缓存全局距离矩阵（用于负样本选择）
+        # Calculate and cache global distance matrix (for negative sample selection)
         self.global_distances = distances
         
-        # 生成正样本和负样本索引
+        # Generate positive and negative sample indices
         pos_indices, neg_indices = self._generate_pos_neg_pairs(nbr_indices, X.shape[0])
         
-        # 将结果存储到nadata.uns中
+        # Store results in nadata.uns
         if nadata is not None:
             if not hasattr(nadata, 'uns'):
                 nadata.uns = {}
@@ -247,9 +247,9 @@ class UMAPLoss(nn.Module):
             nadata.uns['pos_indices'] = pos_indices
             nadata.uns['neg_indices'] = neg_indices
             nadata.uns['global_distances'] = self.global_distances
-            self.logger.info("已将PCA、pos_indices、neg_indices和global_distances数据存储到nadata.uns中")
+            self.logger.info("PCA, pos_indices, neg_indices and global_distances data have been stored in nadata.uns")
         
-        # 缓存结果
+        # Cache results
         self.nbr_indices = nbr_indices
         self.pos_indices = pos_indices
         self.neg_indices = neg_indices
@@ -260,14 +260,14 @@ class UMAPLoss(nn.Module):
     
     def find_neighbors_pca(self, X: np.ndarray, nadata=None) -> np.ndarray:
         """
-        获取已缓存的近邻索引（如果未缓存则先计算）
+        Get cached neighbor indices (calculate first if not cached)
         
         Args:
-            X: 原始高维数据
-            nadata: nadata对象，可选
+            X: Original high-dimensional data
+            nadata: nadata object, optional
             
         Returns:
-            nbr_indices: 近邻索引数组
+            nbr_indices: Neighbor index array
         """
         if not self.is_fitted:
             self.fit_pca(X, nadata)
@@ -276,38 +276,38 @@ class UMAPLoss(nn.Module):
     
     def _generate_pos_neg_pairs(self, nbr_indices: np.ndarray, n_samples: int):
         """
-        生成正样本和负样本对
+        Generate positive and negative sample pairs
         
         Args:
-            nbr_indices: 近邻索引数组，形状为(n_samples, n_neighbors+1)
-            n_samples: 样本数量
+            nbr_indices: Neighbor index array, shape (n_samples, n_neighbors+1)
+            n_samples: Number of samples
             
         Returns:
-            tuple: (pos_indices, neg_indices) 正样本和负样本索引
+            tuple: (pos_indices, neg_indices) Positive and negative sample indices
         """
-        # 正样本：每个样本与其近邻（排除自身）
+        # Positive samples: each sample with its neighbors (excluding self)
         pos_pairs = []
         for i in range(n_samples):
-            # 获取当前样本的近邻（排除自身）
-            neighbors = nbr_indices[i][1:]  # 排除第一个（自身）
+            # Get current sample's neighbors (excluding self)
+            neighbors = nbr_indices[i][1:]  # Exclude the first one (self)
             for neighbor in neighbors:
                 pos_pairs.append([i, neighbor])
         
         pos_indices = np.array(pos_pairs)
         
-        # 负样本：随机选择非近邻的样本对
+        # Negative samples: randomly select non-neighbor sample pairs
         neg_pairs = []
-        n_neg_per_sample = min(self.n_neighbors, n_samples - self.n_neighbors - 1)  # 确保不超过可用样本数
+        n_neg_per_sample = min(self.n_neighbors, n_samples - self.n_neighbors - 1)  # Ensure not exceeding available sample count
         
         for i in range(n_samples):
-            # 获取当前样本的近邻
+            # Get current sample's neighbors
             neighbors = set(nbr_indices[i])
             
-            # 随机选择非近邻的样本作为负样本
+            # Randomly select non-neighbor samples as negative samples
             non_neighbors = [j for j in range(n_samples) if j not in neighbors and j != i]
             
             if len(non_neighbors) > 0:
-                # 随机选择负样本
+                # Randomly select negative samples
                 n_neg = min(n_neg_per_sample, len(non_neighbors))
                 selected_neg = np.random.choice(non_neighbors, size=n_neg, replace=False)
                 
@@ -316,35 +316,35 @@ class UMAPLoss(nn.Module):
         
         neg_indices = np.array(neg_pairs) if neg_pairs else np.empty((0, 2), dtype=int)
         
-        self.logger.info(f"生成样本对: 正样本 {len(pos_indices)} 对, 负样本 {len(neg_indices)} 对")
+        self.logger.info(f"Generated sample pairs: {len(pos_indices)} positive pairs, {len(neg_indices)} negative pairs")
         
         return pos_indices, neg_indices
 
     def forward(self, embeddings, original_data=None, nadata=None, batch_pos_indices=None, batch_neg_indices=None):
         """
-        计算UMAP损失
+        Calculate UMAP loss
         
         Args:
-            embeddings: 嵌入向量，形状为(batch_size, embedding_dim)
-            original_data: 原始数据，用于计算重构损失
-            nadata: nadata对象
-            batch_pos_indices: 批次正样本索引，形状为(batch_size, n_pos_pairs, 2)
-            batch_neg_indices: 批次负样本索引，形状为(batch_size, n_neg_pairs, 2)
+            embeddings: Embedding vectors, shape (batch_size, embedding_dim)
+            original_data: Original data, used for reconstruction loss calculation
+            nadata: nadata object
+            batch_pos_indices: Batch positive sample indices, shape (batch_size, n_pos_pairs, 2)
+            batch_neg_indices: Batch negative sample indices, shape (batch_size, n_neg_pairs, 2)
             
         Returns:
-            total_loss: 总损失
+            total_loss: Total loss
         """
         if batch_pos_indices is None or batch_neg_indices is None:
-            self.logger.warning("未提供正样本或负样本索引，返回零损失")
+            self.logger.warning("No positive or negative sample indices provided, returning zero loss")
             return torch.tensor(0.0, device=embeddings.device)
         
-        # 验证输入形状
+        # Validate input shapes
         batch_size = embeddings.shape[0]
         if batch_pos_indices.shape[0] != batch_size or batch_neg_indices.shape[0] != batch_size:
-            self.logger.error(f"批次大小不匹配: embeddings={batch_size}, pos_indices={batch_pos_indices.shape[0]}, neg_indices={batch_neg_indices.shape[0]}")
+            self.logger.error(f"Batch size mismatch: embeddings={batch_size}, pos_indices={batch_pos_indices.shape[0]}, neg_indices={batch_neg_indices.shape[0]}")
             return torch.tensor(0.0, device=embeddings.device)
         
-        # 确保索引是torch张量并移动到正确的设备
+        # Ensure indices are torch tensors and moved to correct device
         if not torch.is_tensor(batch_pos_indices):
             batch_pos_indices = torch.tensor(batch_pos_indices, dtype=torch.long, device=embeddings.device)
         elif batch_pos_indices.device != embeddings.device:
@@ -355,71 +355,71 @@ class UMAPLoss(nn.Module):
         elif batch_neg_indices.device != embeddings.device:
             batch_neg_indices = batch_neg_indices.to(embeddings.device)
         
-        # 选择使用向量化实现还是循环实现
+        # Choose between vectorized implementation or loop implementation
         if self.use_vectorized:
-            # 使用向量化实现（更高效）
+            # Use vectorized implementation (more efficient)
             pos_loss, neg_loss = self._compute_loss_vectorized(embeddings, batch_pos_indices, batch_neg_indices)
         else:
-            # 使用循环实现（更直观）
+            # Use loop implementation (more intuitive)
             pos_loss = self._compute_positive_loss(embeddings, batch_pos_indices)
             neg_loss = self._compute_negative_loss(embeddings, batch_neg_indices)
         
-        # 总损失
+        # Total loss
         total_loss = pos_loss + neg_loss
         
-        # 记录损失统计信息
+        # Record loss statistics
         if hasattr(self, 'loss_stats'):
             self.loss_stats['pos_loss'] = pos_loss.item()
             self.loss_stats['neg_loss'] = neg_loss.item()
             self.loss_stats['total_loss'] = total_loss.item()
         
-        # 调试信息（仅在需要时显示）
+        # Debug information (only shown when needed)
         if self.debug:
-            self.logger.info(f"UMAP损失 - 正样本: {pos_loss.item():.6f}, 负样本: {neg_loss.item():.6f}, 总计: {total_loss.item():.6f}")
+            self.logger.info(f"UMAP loss - Positive: {pos_loss.item():.6f}, Negative: {neg_loss.item():.6f}, Total: {total_loss.item():.6f}")
         
         return total_loss
     
     def _compute_positive_loss(self, embeddings, pos_indices):
         """
-        计算正样本损失
+        Calculate positive sample loss
         
         Args:
-            embeddings: 嵌入向量，形状为(batch_size, embedding_dim)
-            pos_indices: 正样本索引对，形状为(batch_size, n_pos_pairs, 2)
+            embeddings: Embedding vectors, shape (batch_size, embedding_dim)
+            pos_indices: Positive sample index pairs, shape (batch_size, n_pos_pairs, 2)
             
         Returns:
-            pos_loss: 正样本损失
+            pos_loss: Positive sample loss
         """
         if pos_indices.numel() == 0:
             return torch.tensor(0.0, device=embeddings.device)
         
-        # 处理批次数据
+        # Process batch data
         batch_size = embeddings.shape[0]
         pos_pairs = []
         
-        # 遍历每个样本的正样本对
+        # Iterate through positive sample pairs for each sample
         for i in range(batch_size):
-            sample_pos_pairs = pos_indices[i]  # 形状为(n_pos_pairs, 2)
+            sample_pos_pairs = pos_indices[i]  # Shape (n_pos_pairs, 2)
             for pair in sample_pos_pairs:
                 idx1, idx2 = pair[0].item(), pair[1].item()
-                # 确保索引在批次范围内
+                # Ensure indices are within batch range
                 if 0 <= idx1 < batch_size and 0 <= idx2 < batch_size:
                     pos_pairs.append([embeddings[idx1], embeddings[idx2]])
         
         if not pos_pairs:
             return torch.tensor(0.0, device=embeddings.device)
         
-        # 使用更高效的方式堆叠张量
+        # Use more efficient tensor stacking
         pos_pairs = torch.stack([torch.stack(pair) for pair in pos_pairs])
         
-        # 计算正样本对之间的距离
+        # Calculate distances between positive sample pairs
         pos_distances = torch.norm(pos_pairs[:, 0] - pos_pairs[:, 1], dim=1)
         
-        # UMAP正样本损失：使用交叉熵损失
-        # 目标：正样本对应该接近
+        # UMAP positive sample loss: use cross-entropy loss
+        # Goal: positive sample pairs should be close
         pos_targets = torch.ones(len(pos_distances), device=embeddings.device)
         
-        # 使用sigmoid将距离转换为概率
+        # Use sigmoid to convert distance to probability
         pos_probs = torch.sigmoid(-pos_distances / self.min_dist)
         pos_loss = F.binary_cross_entropy(pos_probs, pos_targets)
         
@@ -427,45 +427,45 @@ class UMAPLoss(nn.Module):
     
     def _compute_negative_loss(self, embeddings, neg_indices):
         """
-        计算负样本损失
+        Calculate negative sample loss
         
         Args:
-            embeddings: 嵌入向量，形状为(batch_size, embedding_dim)
-            neg_indices: 负样本索引对，形状为(batch_size, n_neg_pairs, 2)
+            embeddings: Embedding vectors, shape (batch_size, embedding_dim)
+            neg_indices: Negative sample index pairs, shape (batch_size, n_neg_pairs, 2)
             
         Returns:
-            neg_loss: 负样本损失
+            neg_loss: Negative sample loss
         """
         if neg_indices.numel() == 0:
             return torch.tensor(0.0, device=embeddings.device)
         
-        # 处理批次数据
+        # Process batch data
         batch_size = embeddings.shape[0]
         neg_pairs = []
         
-        # 遍历每个样本的负样本对
+        # Iterate through negative sample pairs for each sample
         for i in range(batch_size):
-            sample_neg_pairs = neg_indices[i]  # 形状为(n_neg_pairs, 2)
+            sample_neg_pairs = neg_indices[i]  # Shape (n_neg_pairs, 2)
             for pair in sample_neg_pairs:
                 idx1, idx2 = pair[0].item(), pair[1].item()
-                # 确保索引在批次范围内
+                # Ensure indices are within batch range
                 if 0 <= idx1 < batch_size and 0 <= idx2 < batch_size:
                     neg_pairs.append([embeddings[idx1], embeddings[idx2]])
         
         if not neg_pairs:
             return torch.tensor(0.0, device=embeddings.device)
         
-        # 使用更高效的方式堆叠张量
+        # Use more efficient tensor stacking
         neg_pairs = torch.stack([torch.stack(pair) for pair in neg_pairs])
         
-        # 计算负样本对之间的距离
+        # Calculate distances between negative sample pairs
         neg_distances = torch.norm(neg_pairs[:, 0] - neg_pairs[:, 1], dim=1)
         
-        # UMAP负样本损失：使用交叉熵损失
-        # 目标：负样本对应该远离
+        # UMAP negative sample loss: use cross-entropy loss
+        # Goal: negative sample pairs should be far apart
         neg_targets = torch.zeros(len(neg_distances), device=embeddings.device)
         
-        # 使用sigmoid将距离转换为概率
+        # Use sigmoid to convert distance to probability
         neg_probs = torch.sigmoid(-neg_distances / self.min_dist)
         neg_loss = F.binary_cross_entropy(neg_probs, neg_targets)
         
@@ -473,25 +473,25 @@ class UMAPLoss(nn.Module):
     
     def _compute_loss_vectorized(self, embeddings, pos_indices, neg_indices):
         """
-        向量化计算UMAP损失（更高效的实现）
+        Vectorized UMAP loss calculation (more efficient implementation)
         
         Args:
-            embeddings: 嵌入向量，形状为(batch_size, embedding_dim)
-            pos_indices: 正样本索引对，形状为(batch_size, n_pos_pairs, 2)
-            neg_indices: 负样本索引对，形状为(batch_size, n_neg_pairs, 2)
+            embeddings: Embedding vectors, shape (batch_size, embedding_dim)
+            pos_indices: Positive sample index pairs, shape (batch_size, n_pos_pairs, 2)
+            neg_indices: Negative sample index pairs, shape (batch_size, n_neg_pairs, 2)
             
         Returns:
-            pos_loss, neg_loss: 正样本损失和负样本损失
+            pos_loss, neg_loss: Positive sample loss and negative sample loss
         """
         batch_size = embeddings.shape[0]
         
-        # 向量化处理正样本对
+        # Vectorized processing of positive sample pairs
         pos_loss = torch.tensor(0.0, device=embeddings.device)
         if pos_indices.numel() > 0:
-            # 重塑索引以便向量化处理
+            # Reshape indices for vectorized processing
             pos_indices_flat = pos_indices.view(-1, 2)
             
-            # 过滤有效的索引对（在批次范围内）
+            # Filter valid index pairs (within batch range)
             valid_mask = (pos_indices_flat[:, 0] >= 0) & (pos_indices_flat[:, 0] < batch_size) & \
                         (pos_indices_flat[:, 1] >= 0) & (pos_indices_flat[:, 1] < batch_size)
             
@@ -500,21 +500,21 @@ class UMAPLoss(nn.Module):
                 pos_embeddings1 = embeddings[valid_pos_indices[:, 0]]
                 pos_embeddings2 = embeddings[valid_pos_indices[:, 1]]
                 
-                # 计算距离
+                # Calculate distances
                 pos_distances = torch.norm(pos_embeddings1 - pos_embeddings2, dim=1)
                 
-                # 计算损失
+                # Calculate loss
                 pos_targets = torch.ones(len(pos_distances), device=embeddings.device)
                 pos_probs = torch.sigmoid(-pos_distances / self.min_dist)
                 pos_loss = F.binary_cross_entropy(pos_probs, pos_targets)
         
-        # 向量化处理负样本对
+        # Vectorized processing of negative sample pairs
         neg_loss = torch.tensor(0.0, device=embeddings.device)
         if neg_indices.numel() > 0:
-            # 重塑索引以便向量化处理
+            # Reshape indices for vectorized processing
             neg_indices_flat = neg_indices.view(-1, 2)
             
-            # 过滤有效的索引对（在批次范围内）
+            # Filter valid index pairs (within batch range)
             valid_mask = (neg_indices_flat[:, 0] >= 0) & (neg_indices_flat[:, 0] < batch_size) & \
                         (neg_indices_flat[:, 1] >= 0) & (neg_indices_flat[:, 1] < batch_size)
             
@@ -523,10 +523,10 @@ class UMAPLoss(nn.Module):
                 neg_embeddings1 = embeddings[valid_neg_indices[:, 0]]
                 neg_embeddings2 = embeddings[valid_neg_indices[:, 1]]
                 
-                # 计算距离
+                # Calculate distances
                 neg_distances = torch.norm(neg_embeddings1 - neg_embeddings2, dim=1)
                 
-                # 计算损失
+                # Calculate loss
                 neg_targets = torch.zeros(len(neg_distances), device=embeddings.device)
                 neg_probs = torch.sigmoid(-neg_distances / self.min_dist)
                 neg_loss = F.binary_cross_entropy(neg_probs, neg_targets)
@@ -536,48 +536,48 @@ class UMAPLoss(nn.Module):
 
 class NNEAUMAP(BaseModel):
     """
-    NNEA UMAP降维器
-    实现基于神经网络的UMAP降维，提供可解释的降维结果
+    NNEA UMAP dimensionality reducer
+    Implements a neural network-based UMAP dimensionality reduction, providing interpretable dimensionality reduction results
     """
     
     def __init__(self, config: Dict[str, Any]):
         """
-        初始化NNEA UMAP降维器
+        Initialize NNEA UMAP dimensionality reducer
         
         Args:
-            config: 模型配置
+            config: Model configuration
         """
         super().__init__(config)
         self.task = 'umap'
 
     def build(self, nadata) -> None:
         """
-        构建模型
+        Build the model
         
         Args:
-            nadata: nadata对象
+            nadata: nadata object
         """
         if nadata is None:
-            raise ValueError("nadata对象不能为空")
+            raise ValueError("nadata object cannot be empty")
         
-        # 获取输入维度
+        # Get input dimension
         if hasattr(nadata, 'X') and nadata.X is not None:
-            input_dim = nadata.X.shape[1]  # 基因数量
+            input_dim = nadata.X.shape[1]  # Number of genes
         else:
-            raise ValueError("表达矩阵未加载")
+            raise ValueError("Expression matrix not loaded")
         
-        # 获取UMAP配置
+        # Get UMAP configuration
         umap_config = self.config.get('umap', {})
         embedding_dim = umap_config.get('embedding_dim', 2)
         hidden_dims = umap_config.get('hidden_dims', [128, 64, 32])
         dropout = umap_config.get('dropout', 0.1)
         
-        # 更新配置
+        # Update configuration
         self.config['input_dim'] = input_dim
         self.config['embedding_dim'] = embedding_dim
         self.config['device'] = str(self.device)
         
-        # 创建模型
+        # Create model
         self.model = NeuralUMAP(
             input_dim=input_dim,
             embedding_dim=embedding_dim,
@@ -586,7 +586,7 @@ class NNEAUMAP(BaseModel):
         )
         self.model.to(self.device)
         
-        # 创建UMAP损失函数（使用优化的PCA版本）
+        # Create UMAP loss function (using optimized PCA version)
         n_neighbors = umap_config.get('n_neighbors', 15)
         min_dist = umap_config.get('min_dist', 0.1)
         pca_components = umap_config.get('pca_components', 50)
@@ -597,38 +597,38 @@ class NNEAUMAP(BaseModel):
             pca_components=pca_components
         ).to(self.device)
         
-        self.logger.info(f"NNEA UMAP降维器已构建: 输入维度={input_dim}, 嵌入维度={embedding_dim}")
-        self.logger.info(f"隐藏层维度: {hidden_dims}")
-        self.logger.info(f"UMAP参数: n_neighbors={n_neighbors}, min_dist={min_dist}, pca_components={pca_components}")
+        self.logger.info(f"NNEA UMAP dimensionality reducer built: input dimension={input_dim}, embedding dimension={embedding_dim}")
+        self.logger.info(f"Hidden layer dimensions: {hidden_dims}")
+        self.logger.info(f"UMAP parameters: n_neighbors={n_neighbors}, min_dist={min_dist}, pca_components={pca_components}")
     
     def train(self, nadata, verbose: int = 1, max_epochs: Optional[int] = None, **kwargs) -> Dict[str, Any]:
         """
-        训练模型
+        Train the model
         
         Args:
-            nadata: nadata对象
-            verbose: 详细程度
-                0=只显示进度条
-                1=显示训练损失
-                2=显示训练损失和重构损失
-            max_epochs: 最大训练轮数，如果为None则使用配置中的epochs
-            **kwargs: 额外参数
+            nadata: nadata object
+            verbose: Verbosity level
+                0=Only show progress bar
+                1=Show training loss
+                2=Show training loss and reconstruction loss
+            max_epochs: Maximum number of epochs, if None, use epochs from config
+            **kwargs: Additional parameters
             
         Returns:
-            训练结果字典
+            Training results dictionary
         """
         if self.model is None:
-            raise ValueError("模型未构建")
+            raise ValueError("Model not built")
         
-        # 准备数据
+        # Prepare data
         X = nadata.X
 
-        # 在训练开始前完成PCA和近邻计算（只计算一次）
-        self.logger.info("正在计算PCA和近邻关系...")
+        # Complete PCA and neighbor calculation before training (only once)
+        self.logger.info("Calculating PCA and neighbor relationships...")
         pos_indices, neg_indices = self.umap_loss.fit_pca(X, nadata)
-        self.logger.info("PCA和近邻计算完成！")
+        self.logger.info("PCA and neighbor calculation completed!")
         
-        # 训练参数
+        # Training parameters
         training_config = self.config.get('training', {})
         if max_epochs is None:
             epochs = training_config.get('epochs', 100)
@@ -638,21 +638,21 @@ class NNEAUMAP(BaseModel):
         batch_size = training_config.get('batch_size', 32)
         test_size = training_config.get('test_size', 0.2)
         
-        # 转换为张量
+        # Convert to tensor
         X_tensor = torch.FloatTensor(X)
         
-        # 自定义数据集类
+        # Custom dataset class
         class UMAPDataset(torch.utils.data.Dataset):
             def __init__(self, X, pos_indices, neg_indices):
                 self.X = X
                 self.pos_indices = pos_indices
                 self.neg_indices = neg_indices
                 
-                # 为每个样本创建索引映射
+                # Create index mapping for each sample
                 self.sample_to_pos = {}
                 self.sample_to_neg = {}
                 
-                # 构建样本到正样本对的映射
+                # Build sample to positive pair mapping
                 for i, (idx1, idx2) in enumerate(pos_indices):
                     if idx1 not in self.sample_to_pos:
                         self.sample_to_pos[idx1] = []
@@ -662,7 +662,7 @@ class NNEAUMAP(BaseModel):
                         self.sample_to_pos[idx2] = []
                     self.sample_to_pos[idx2].append(idx1)
                 
-                # 构建样本到负样本对的映射
+                # Build sample to negative pair mapping
                 for i, (idx1, idx2) in enumerate(neg_indices):
                     if idx1 not in self.sample_to_neg:
                         self.sample_to_neg[idx1] = []
@@ -672,7 +672,7 @@ class NNEAUMAP(BaseModel):
                         self.sample_to_neg[idx2] = []
                     self.sample_to_neg[idx2].append(idx1)
                 
-                # 计算最大正样本和负样本数量，用于填充
+                # Calculate maximum positive and negative sample count for padding
                 self.max_pos_pairs = 0
                 self.max_neg_pairs = 0
                 for i in range(len(X)):
@@ -681,47 +681,47 @@ class NNEAUMAP(BaseModel):
                     self.max_pos_pairs = max(self.max_pos_pairs, pos_count)
                     self.max_neg_pairs = max(self.max_neg_pairs, neg_count)
                 
-                # 确保至少有一个样本对
+                # Ensure at least one sample pair
                 self.max_pos_pairs = max(self.max_pos_pairs, 1)
                 self.max_neg_pairs = max(self.max_neg_pairs, 1)
                 
-                # 记录最大样本对数量
-                print(f"数据集统计: 最大正样本对数量={self.max_pos_pairs}, 最大负样本对数量={self.max_neg_pairs}")
+                # Record maximum sample pair count
+                print(f"Dataset statistics: max positive sample pairs={self.max_pos_pairs}, max negative sample pairs={self.max_neg_pairs}")
             
             def __len__(self):
                 return len(self.X)
             
             def __getitem__(self, idx):
-                # 获取当前样本的正样本索引
+                # Get positive sample indices for the current sample
                 pos_neighbors = self.sample_to_pos.get(idx, [])
                 if len(pos_neighbors) == 0:
-                    pos_neighbors = [idx]  # 如果没有正样本，使用自身
+                    pos_neighbors = [idx]  # If no positive samples, use self
                 
-                # 获取当前样本的负样本索引
+                # Get negative sample indices for the current sample
                 neg_neighbors = self.sample_to_neg.get(idx, [])
                 if len(neg_neighbors) == 0:
-                    neg_neighbors = [idx]  # 如果没有负样本，使用自身
+                    neg_neighbors = [idx]  # If no negative samples, use self
                 
-                # 创建正样本对索引并填充到固定大小
+                # Create positive sample pairs indices and pad to fixed size
                 pos_pairs = [[idx, neighbor] for neighbor in pos_neighbors]
                 while len(pos_pairs) < self.max_pos_pairs:
-                    pos_pairs.append([idx, idx])  # 用自身填充
+                    pos_pairs.append([idx, idx])  # Pad with self
                 
-                # 创建负样本对索引并填充到固定大小
+                # Create negative sample pairs indices and pad to fixed size
                 neg_pairs = [[idx, neighbor] for neighbor in neg_neighbors]
                 while len(neg_pairs) < self.max_neg_pairs:
-                    neg_pairs.append([idx, idx])  # 用自身填充
+                    neg_pairs.append([idx, idx])  # Pad with self
                 
-                # 将原始索引转换为批次内索引（相对位置）
-                # 这里我们返回原始索引，在DataLoader的collate_fn中进行转换
+                # Convert original indices to batch indices (relative position)
+                # We return original indices, which will be converted in DataLoader's collate_fn
                 return (self.X[idx], 
                        torch.tensor(pos_pairs, dtype=torch.long),
                        torch.tensor(neg_pairs, dtype=torch.long))
         
-        # 构建完整数据集
+        # Build full dataset
         full_dataset = UMAPDataset(X_tensor, pos_indices, neg_indices)
         
-        # 使用random_split分割数据集
+        # Split dataset using random_split
         n_samples = X.shape[0]
         train_size = int(n_samples * (1 - test_size))
         test_size_split = n_samples - train_size
@@ -730,67 +730,67 @@ class NNEAUMAP(BaseModel):
             full_dataset, [train_size, test_size_split]
         )
         
-        self.logger.info(f"数据划分: 训练集 {len(train_dataset)} 样本, 测试集 {len(test_dataset)} 样本")
+        self.logger.info(f"Dataset split: {len(train_dataset)} samples in training set, {len(test_dataset)} samples in test set")
         
-        # 存储训练集索引供后续使用（从random_split获取）
+        # Store training indices for later use (obtained from random_split)
         self.train_indices = train_dataset.indices
         
-        # 定义collate函数，将原始索引转换为批次内索引
+        # Define collate function to convert original indices to batch indices
         def umap_collate_fn(batch):
             """
-            将批次数据中的原始索引转换为批次内索引
+            Convert original indices in batch data to batch indices
             """
             batch_X = []
             batch_pos_indices = []
             batch_neg_indices = []
             
-            # 获取当前批次中所有样本在原始数据集中的索引
-            # 由于random_split会重新索引，我们需要从train_dataset.indices获取原始索引
+            # Get original indices of all samples in the current batch from the train_dataset.indices
+            # Since random_split re-indexes, we need to get original indices from train_dataset.indices
             batch_original_indices = [train_dataset.indices[i] for i in range(len(batch))]
             
-            # 创建原始索引到批次内索引的映射
+            # Create a mapping from original indices to batch indices
             original_to_batch = {orig_idx: batch_idx for batch_idx, orig_idx in enumerate(batch_original_indices)}
             
             for i, (X_item, pos_pairs, neg_pairs) in enumerate(batch):
                 batch_X.append(X_item)
                 
-                # 将原始索引转换为批次内索引
+                # Convert original indices to batch indices
                 pos_pairs_batch = pos_pairs.clone()
                 neg_pairs_batch = neg_pairs.clone()
                 
-                # 转换正样本对索引
+                # Convert positive sample pair indices
                 for j in range(pos_pairs_batch.shape[0]):
                     orig_idx1, orig_idx2 = pos_pairs_batch[j]
                     if orig_idx1 in original_to_batch and orig_idx2 in original_to_batch:
                         pos_pairs_batch[j, 0] = original_to_batch[orig_idx1]
                         pos_pairs_batch[j, 1] = original_to_batch[orig_idx2]
                     else:
-                        # 如果索引不在当前批次中，使用自身索引
+                        # If index is not in the current batch, use self index
                         pos_pairs_batch[j, 0] = i
                         pos_pairs_batch[j, 1] = i
                 
-                # 转换负样本对索引
+                # Convert negative sample pair indices
                 for j in range(neg_pairs_batch.shape[0]):
                     orig_idx1, orig_idx2 = neg_pairs_batch[j]
                     if orig_idx1 in original_to_batch and orig_idx2 in original_to_batch:
                         neg_pairs_batch[j, 0] = original_to_batch[orig_idx1]
                         neg_pairs_batch[j, 1] = original_to_batch[orig_idx2]
                     else:
-                        # 如果索引不在当前批次中，使用自身索引
+                        # If index is not in the current batch, use self index
                         neg_pairs_batch[j, 0] = i
                         neg_pairs_batch[j, 1] = i
                 
                 batch_pos_indices.append(pos_pairs_batch)
                 batch_neg_indices.append(neg_pairs_batch)
             
-            # 堆叠批次数据
+            # Stack batch data
             batch_X = torch.stack(batch_X)
             batch_pos_indices = torch.stack(batch_pos_indices)
             batch_neg_indices = torch.stack(batch_neg_indices)
             
             return batch_X, batch_pos_indices, batch_neg_indices
         
-        # 创建数据加载器
+        # Create data loader
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -799,73 +799,73 @@ class NNEAUMAP(BaseModel):
             collate_fn=umap_collate_fn
         )
         
-        # 优化器
+        # Optimizer
         optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         
-        # 早停机制参数
+        # Early stopping parameters
         patience = training_config.get('patience', 10)
         min_delta = 1e-6
         
-        # 早停变量初始化
+        # Early stopping variable initialization
         best_loss = float('inf')
         patience_counter = 0
         early_stopped = False
         
-        # 训练循环
+        # Training loop
         train_losses = []
         
         if verbose >= 1:
-            self.logger.info("开始训练NNEA UMAP模型...")
-            self.logger.info(f"早停配置: patience={patience}, min_delta={min_delta}")
+            self.logger.info("Starting NNEA UMAP model training...")
+            self.logger.info(f"Early stopping configuration: patience={patience}, min_delta={min_delta}")
         
-        # 导入tqdm用于进度条
+        # Import tqdm for progress bar
         try:
             from tqdm import tqdm
             use_tqdm = True
         except ImportError:
             use_tqdm = False
         
-        # 创建进度条（只有verbose=0时显示）
+        # Create progress bar (only shown when verbose=0)
         if verbose == 0 and use_tqdm:
-            pbar = tqdm(range(epochs), desc="训练进度")
+            pbar = tqdm(range(epochs), desc="Training progress")
         else:
             pbar = range(epochs)
         
         for epoch in pbar:
-            # 训练模式
+            # Training mode
             self.model.train()
             epoch_loss = 0.0
             num_batches = 0
             
-            # 使用数据加载器进行批处理训练
+            # Train with batch data using data loader
             for batch_idx, (batch_X, batch_pos_indices, batch_neg_indices) in enumerate(train_loader):
 
-                # 将数据移动到设备
+                # Move data to device
                 batch_X = batch_X.to(self.device)
                 
                 optimizer.zero_grad()
                 
                 try:
-                    # 前向传播
+                    # Forward pass
                     encoded, decoded = self.model(batch_X)
 
-                    # 调试信息：显示indices数量
+                    # Debug information: show indices count
                     if verbose >= 2 and batch_idx == 0:
                         self.logger.info(f"Epoch {epoch}, Batch {batch_idx}: batch_pos_indices={batch_pos_indices.shape}, batch_neg_indices={batch_neg_indices.shape}")
 
 
                     umap_loss = self.umap_loss(encoded, X, nadata, batch_pos_indices, batch_neg_indices)
                     
-                    # 计算重构损失（可选）
+                    # Calculate reconstruction loss (optional)
                     recon_loss = F.mse_loss(decoded, batch_X)
                     
-                    # 总损失
+                    # Total loss
                     total_loss = umap_loss + 0.1 * recon_loss
                     
-                    # 反向传播
+                    # Backward pass
                     total_loss.backward()
                     
-                    # 梯度裁剪
+                    # Gradient clipping
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     
                     optimizer.step()
@@ -874,52 +874,52 @@ class NNEAUMAP(BaseModel):
                     num_batches += 1
                     
                 except Exception as e:
-                    self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: 训练过程中出现错误: {e}")
+                    self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: Error during training: {e}")
                     continue
             
-            # 计算平均损失
+            # Calculate average loss
             if num_batches > 0:
                 avg_loss = epoch_loss / num_batches
                 train_losses.append(avg_loss)
                 
-                # verbose=1时显示训练损失
+                # Show training loss when verbose=1
                 if verbose >= 1:
                     self.logger.info(f"Epoch {epoch}: Train Loss={avg_loss:.4f}")
                 
-                # 早停检查
+                # Early stopping check
                 if avg_loss < best_loss - min_delta:
                     best_loss = avg_loss
                     patience_counter = 0
                 else:
                     patience_counter += 1
                 
-                # 检查是否触发早停
+                # Check if early stopping is triggered
                 if patience_counter >= patience:
                     early_stopped = True
-                    self.logger.info(f"🛑 Epoch {epoch}: 触发早停！损失在{patience}个epoch内未改善")
+                    self.logger.info(f"🛑 Epoch {epoch}: Early stopping triggered! Loss did not improve for {patience} epochs")
                     break
         
-        # 训练完成
+        # Training completed
         self.is_trained = True
         
-        # 记录早停信息
+        # Log early stopping info
         if early_stopped:
-            self.logger.info(f"📊 训练因早停而结束，实际训练了{epoch+1}个epoch")
+            self.logger.info(f"📊 Training ended due to early stopping, trained for {epoch+1} epochs")
         else:
-            self.logger.info(f"📊 训练完成，共训练了{epochs}个epoch")
+            self.logger.info(f"📊 Training completed, trained for {epochs} epochs")
         
-        # 显示缓存信息
+        # Show cache info
         cache_info = self.get_cache_info()
-        self.logger.info("缓存信息：")
-        self.logger.info(f"- PCA已拟合: {cache_info['pca_fitted']}")
-        self.logger.info(f"- 近邻索引形状: {cache_info['nbr_indices_shape']}")
-        self.logger.info(f"- PCA组件数: {cache_info['pca_components']}")
-        self.logger.info(f"- 原始数据形状: {cache_info['original_data_shape']}")
-        self.logger.info(f"- 全局距离矩阵形状: {cache_info['global_distances_shape']}")
-        self.logger.info(f"- 智能负样本采样: {cache_info['smart_negative_sampling']}")
-        self.logger.info("✅ 改进：使用全局距离信息进行智能负样本选择，提高UMAP质量")
+        self.logger.info("Cache info:")
+        self.logger.info(f"- PCA fitted: {cache_info['pca_fitted']}")
+        self.logger.info(f"- Neighbor index shape: {cache_info['nbr_indices_shape']}")
+        self.logger.info(f"- PCA components: {cache_info['pca_components']}")
+        self.logger.info(f"- Original data shape: {cache_info['original_data_shape']}")
+        self.logger.info(f"- Global distances shape: {cache_info['global_distances_shape']}")
+        self.logger.info(f"- Smart negative sampling: {cache_info['smart_negative_sampling']}")
+        self.logger.info("✅ Improvement: Using global distance information for smart negative sample selection, improving UMAP quality")
         
-        # 返回训练结果
+        # Return training results
         results = {
             'train_losses': train_losses,
             'final_train_loss': train_losses[-1] if train_losses else None,
@@ -932,22 +932,22 @@ class NNEAUMAP(BaseModel):
 
     def predict(self, nadata) -> np.ndarray:
         """
-        模型预测（降维）
+        Model prediction (dimensionality reduction)
         
         Args:
-            nadata: nadata对象
+            nadata: nadata object
             
         Returns:
-            降维后的嵌入结果
+            Embedding results after dimensionality reduction
         """
         if not self.is_trained:
-            raise ValueError("模型未训练")
+            raise ValueError("Model not trained")
         
         self.model.eval()
         with torch.no_grad():
             X = nadata.X
             
-            # 数据标准化
+            # Data standardization
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
             
@@ -957,45 +957,45 @@ class NNEAUMAP(BaseModel):
     
     def evaluate(self, nadata, split='test') -> Dict[str, float]:
         """
-        模型评估
+        Model evaluation
         
         Args:
-            nadata: nadata对象
-            split: 评估的数据集分割
+            nadata: nadata object
+            split: Data set split for evaluation
             
         Returns:
-            评估指标字典
+            Evaluation metrics dictionary
         """
         if not self.is_trained:
-            raise ValueError("模型未训练")
+            raise ValueError("Model not trained")
         
-        # 获取数据索引
+        # Get data indices
         indices = nadata.Model.get_indices(split)
         if indices is None:
-            raise ValueError(f"未找到{split}集的索引")
+            raise ValueError(f"Indices for {split} set not found")
         
-        # 根据索引获取数据
+        # Get data based on indices
         X = nadata.X[indices]
         
-        # 获取嵌入结果
+        # Get embedding results
         embeddings = self.predict(nadata)
         embeddings_split = embeddings[indices]
         
-        # 计算降维质量指标
+        # Calculate dimensionality reduction quality metrics
         try:
-            # 重构误差
+            # Reconstruction error
             X_tensor = torch.FloatTensor(X).to(self.device)
             with torch.no_grad():
                 encoded, decoded = self.model(X_tensor)
                 reconstruction_error = F.mse_loss(decoded, X_tensor).item()
             
-            # 如果有关联的标签，计算聚类指标
+            # If there are associated labels, calculate clustering metrics
             if hasattr(nadata, 'Meta') and nadata.Meta is not None:
                 target_col = self.config.get('dataset', {}).get('target_column', 'target')
                 if target_col in nadata.Meta.columns:
                     labels = nadata.Meta.iloc[indices][target_col].values
                     
-                    # 计算聚类指标
+                    # Calculate clustering metrics
                     silhouette = silhouette_score(embeddings_split, labels)
                     calinski_harabasz = calinski_harabasz_score(embeddings_split, labels)
                     davies_bouldin = davies_bouldin_score(embeddings_split, labels)
@@ -1016,17 +1016,17 @@ class NNEAUMAP(BaseModel):
                 }
             
         except Exception as e:
-            self.logger.error(f"计算评估指标时出现错误: {e}")
+            self.logger.error(f"Error calculating evaluation metrics: {e}")
             results = {
                 'reconstruction_error': float('inf')
             }
         
-        # 保存评估结果到Model容器
+        # Save evaluation results to Model container
         eval_results = nadata.Model.get_metadata('evaluation_results') or {}
         eval_results[split] = results
         nadata.Model.add_metadata('evaluation_results', eval_results)
         
-        self.logger.info(f"模型评估完成 - {split}集:")
+        self.logger.info(f"Model evaluation completed - {split} set:")
         for metric, value in results.items():
             self.logger.info(f"  {metric}: {value:.4f}")
         
@@ -1034,34 +1034,34 @@ class NNEAUMAP(BaseModel):
     
     def explain(self, nadata, method='importance') -> Dict[str, Any]:
         """
-        模型解释
+        Model explanation
         
         Args:
-            nadata: nadata对象
-            method: 解释方法
+            nadata: nadata object
+            method: Explanation method
             
         Returns:
-            解释结果字典
+            Explanation results dictionary
         """
         if not self.is_trained:
-            raise ValueError("模型未训练")
+            raise ValueError("Model not trained")
         
         if method == 'importance':
             try:
-                # 获取嵌入结果
+                # Get embedding results
                 embeddings = self.predict(nadata)
                 
-                # 计算特征重要性（基于重构误差）
+                # Calculate feature importance (based on reconstruction error)
                 feature_importance = self._calculate_feature_importance(nadata)
                 
-                # 排序并获取前20个重要特征
+                # Sort and get top 20 important features
                 top_indices = np.argsort(feature_importance)[::-1][:20]
                 top_features = [nadata.Var.iloc[i]['Gene'] for i in top_indices]
                 top_scores = feature_importance[top_indices]
                 
-                # 打印20个top_features
-                self.logger.info(f"  - Top 20 重要基因:")
-                self.logger.info(f"    {'排名':<4} {'基因名':<15} {'重要性分数':<12}")
+                # Print top 20 features
+                self.logger.info(f"  - Top 20 important genes:")
+                self.logger.info(f"    {'Rank':<4} {'Gene Name':<15} {'Importance Score':<12}")
                 self.logger.info(f"    {'-'*4} {'-'*15} {'-'*12}")
                 for i, (gene, score) in enumerate(zip(top_features, top_scores)):
                     self.logger.info(f"    {i+1:<4} {gene:<15} {score:<12.4f}")
@@ -1075,38 +1075,38 @@ class NNEAUMAP(BaseModel):
                     }
                 }
                 
-                # 保存解释结果
+                # Save explanation results
                 nadata.uns['nnea_umap_explain'] = explain_results
                 
-                self.logger.info(f"模型解释完成:")
+                self.logger.info(f"Model explanation completed:")
                 return explain_results
                 
             except Exception as e:
-                self.logger.error(f"模型解释失败: {e}")
+                self.logger.error(f"Model explanation failed: {e}")
                 return {}
         else:
-            raise ValueError(f"不支持的解释方法: {method}")
+            raise ValueError(f"Unsupported explanation method: {method}")
     
     def _calculate_feature_importance(self, nadata) -> np.ndarray:
         """
-        计算特征重要性
+        Calculate feature importance
         
         Args:
-            nadata: nadata对象
+            nadata: nadata object
             
         Returns:
-            特征重要性数组
+            Feature importance array
         """
         X = nadata.X
         feature_importance = np.zeros(X.shape[1])
         
-        # 使用重构误差作为重要性指标
+        # Use reconstruction error as importance metric
         for i in range(X.shape[1]):
-            # 创建扰动数据
+            # Create perturbed data
             X_perturbed = X.copy()
-            X_perturbed[:, i] = 0  # 将第i个特征置零
+            X_perturbed[:, i] = 0  # Set the i-th feature to zero
             
-            # 计算重构误差
+            # Calculate reconstruction error
             X_tensor = torch.FloatTensor(X_perturbed).to(self.device)
             with torch.no_grad():
                 encoded, decoded = self.model(X_tensor)
@@ -1118,15 +1118,15 @@ class NNEAUMAP(BaseModel):
     
     def save_model(self, save_path: str) -> None:
         """
-        保存模型状态
+        Save model state
         
         Args:
-            save_path: 保存路径
+            save_path: Save path
         """
         if self.model is None:
-            raise ValueError("模型未构建")
+            raise ValueError("Model not built")
         
-        # 保存模型状态字典
+        # Save model state dictionary
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'umap_loss_state_dict': self.umap_loss.state_dict(),
@@ -1135,61 +1135,61 @@ class NNEAUMAP(BaseModel):
             'is_trained': self.is_trained
         }, save_path)
         
-        self.logger.info(f"模型已保存到: {save_path}")
+        self.logger.info(f"Model saved to: {save_path}")
     
     def load_model(self, load_path: str) -> None:
         """
-        加载模型状态
+        Load model state
         
         Args:
-            load_path: 加载路径
+            load_path: Load path
         """
         if not os.path.exists(load_path):
-            raise FileNotFoundError(f"模型文件不存在: {load_path}")
+            raise FileNotFoundError(f"Model file not found: {load_path}")
         
-        # 加载模型状态字典
+        # Load model state dictionary
         checkpoint = torch.load(load_path, map_location=self.device)
         
-        # 加载模型参数
+        # Load model parameters
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.umap_loss.load_state_dict(checkpoint['umap_loss_state_dict'])
         
-        # 更新其他属性
+        # Update other attributes
         if 'config' in checkpoint:
             self.config = checkpoint['config']
         if 'is_trained' in checkpoint:
             self.is_trained = checkpoint['is_trained']
         
-        self.logger.info(f"模型已从 {load_path} 加载")
+        self.logger.info(f"Model loaded from {load_path}")
     
     def plot_umap_results(self, nadata, title: str = "NNEA UMAP Visualization", 
                          figsize: Tuple[int, int] = (10, 8)) -> None:
         """
-        可视化UMAP结果
+        Visualize UMAP results
         
         Args:
-            nadata: nadata对象
-            title: 图表标题
-            figsize: 图表大小
+            nadata: nadata object
+            title: Chart title
+            figsize: Chart size
         """
         if not self.is_trained:
-            raise ValueError("模型未训练")
+            raise ValueError("Model not trained")
         
-        # 获取嵌入结果
+        # Get embedding results
         embeddings = self.predict(nadata)
         
-        # 获取标签（如果有）
+        # Get labels (if any)
         labels = None
         if hasattr(nadata, 'Meta') and nadata.Meta is not None:
             target_col = self.config.get('dataset', {}).get('target_column', 'target')
             if target_col in nadata.Meta.columns:
                 labels = nadata.Meta[target_col].values
         
-        # 创建可视化
+        # Create visualization
         plt.figure(figsize=figsize)
         
         if labels is not None:
-            # 有标签的情况
+            # Case with labels
             unique_labels = np.unique(labels)
             colors = plt.cm.Set3(np.linspace(0, 1, len(unique_labels)))
             
@@ -1198,7 +1198,7 @@ class NNEAUMAP(BaseModel):
                 plt.scatter(embeddings[mask, 0], embeddings[mask, 1], 
                            c=[colors[i]], label=f'Class {label}', alpha=0.7)
         else:
-            # 无标签的情况
+            # Case without labels
             plt.scatter(embeddings[:, 0], embeddings[:, 1], alpha=0.7)
         
         plt.title(title)
@@ -1211,14 +1211,14 @@ class NNEAUMAP(BaseModel):
         plt.tight_layout()
         plt.show()
         
-        self.logger.info(f"UMAP可视化已完成: {title}")
+        self.logger.info(f"UMAP visualization completed: {title}")
 
     def get_cache_info(self):
         """
-        获取缓存信息
+        Get cache information
         
         Returns:
-            缓存信息字典
+            Cache information dictionary
         """
         if hasattr(self.umap_loss, 'is_fitted') and self.umap_loss.is_fitted:
             return {

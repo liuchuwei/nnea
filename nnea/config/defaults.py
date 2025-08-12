@@ -1,6 +1,6 @@
 """
-默认配置模块
-提供各种默认配置参数
+Default Configuration Module
+Provides various default configuration parameters
 """
 
 from typing import Dict, Any
@@ -8,10 +8,10 @@ from typing import Dict, Any
 
 def get_default_config() -> Dict[str, Any]:
     """
-    获取默认配置
+    Get default configuration
     
     Returns:
-        默认配置字典
+        Default configuration dictionary
     """
     return {
         "model": {
@@ -60,10 +60,10 @@ def get_default_config() -> Dict[str, Any]:
 
 def get_classification_config() -> Dict[str, Any]:
     """
-    获取分类任务默认配置
+    Get default configuration for classification tasks
     
     Returns:
-        分类任务配置
+        Classification task configuration
     """
     config = get_default_config()
     config["model"]["output_activation"] = "softmax"
@@ -74,10 +74,10 @@ def get_classification_config() -> Dict[str, Any]:
 
 def get_regression_config() -> Dict[str, Any]:
     """
-    获取回归任务默认配置
+    Get default configuration for regression tasks
     
     Returns:
-        回归任务配置
+        Regression task configuration
     """
     config = get_default_config()
     config["model"]["output_activation"] = "linear"
@@ -88,10 +88,10 @@ def get_regression_config() -> Dict[str, Any]:
 
 def get_binary_classification_config() -> Dict[str, Any]:
     """
-    获取二分类任务默认配置
+    Get default configuration for binary classification tasks
     
     Returns:
-        二分类任务配置
+        Binary classification task configuration
     """
     config = get_default_config()
     config["model"]["output_activation"] = "sigmoid"
@@ -102,10 +102,10 @@ def get_binary_classification_config() -> Dict[str, Any]:
 
 def get_multi_class_config() -> Dict[str, Any]:
     """
-    获取多分类任务默认配置
+    Get default configuration for multi-classification tasks
     
     Returns:
-        多分类任务配置
+        Multi-classification task configuration
     """
     config = get_default_config()
     config["model"]["output_activation"] = "softmax"
@@ -116,10 +116,10 @@ def get_multi_class_config() -> Dict[str, Any]:
 
 def get_transcriptomics_config() -> Dict[str, Any]:
     """
-    获取转录组学分析默认配置
+    Get default configuration for transcriptomics analysis
     
     Returns:
-        转录组学配置
+        Transcriptomics configuration
     """
     config = get_default_config()
     config["model"]["type"] = "transcriptomics_nn"
@@ -135,13 +135,13 @@ def get_transcriptomics_config() -> Dict[str, Any]:
 
 def get_optimizer_config(optimizer_name: str) -> Dict[str, Any]:
     """
-    获取优化器配置
+    Get optimizer configuration
     
     Args:
-        optimizer_name: 优化器名称
+        optimizer_name: Optimizer name
     
     Returns:
-        优化器配置
+        Optimizer configuration
     """
     optimizers = {
         "adam": {
@@ -171,13 +171,13 @@ def get_optimizer_config(optimizer_name: str) -> Dict[str, Any]:
 
 def get_activation_config(activation_name: str) -> Dict[str, Any]:
     """
-    获取激活函数配置
+    Get activation function configuration
     
     Args:
-        activation_name: 激活函数名称
+        activation_name: Activation function name
     
     Returns:
-        激活函数配置
+        Activation function configuration
     """
     activations = {
         "relu": {
@@ -210,13 +210,13 @@ def get_activation_config(activation_name: str) -> Dict[str, Any]:
 
 def get_loss_config(loss_name: str) -> Dict[str, Any]:
     """
-    获取损失函数配置
+    Get loss function configuration
     
     Args:
-        loss_name: 损失函数名称
+        loss_name: Loss function name
     
     Returns:
-        损失函数配置
+        Loss function configuration
     """
     losses = {
         "binary_crossentropy": {

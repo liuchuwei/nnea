@@ -1,6 +1,6 @@
 """
-NNEA模型工厂
-根据配置选择不同的模型类型
+NNEA Model Factory
+Select different model types based on configuration
 """
 
 import logging
@@ -21,176 +21,176 @@ logger = logging.getLogger(__name__)
 
 def build_model(config: Dict[str, Any]) -> BaseModel:
     """
-    根据配置构建模型
+    Build model based on configuration
     
     Args:
-        config: 模型配置
+        config: Model configuration
         
     Returns:
-        构建好的模型实例
+        Built model instance
     """
-    # 确保实验可重复性
+    # Ensure experiment reproducibility
     ensure_reproducibility(config)
     
     model_type = config.get('global', {}).get('model', 'nnea')
     
-    # 确保设备配置正确传递
+    # Ensure device configuration is correctly passed
     device_config = config.get('global', {}).get('device', 'cpu')
     if device_config == 'cuda' and torch.cuda.is_available():
         config['device'] = 'cuda'
     else:
         config['device'] = 'cpu'
     
-    # 处理NNEA配置的展平
+    # Handle NNEA configuration flattening
     if model_type == 'nnea' and 'nnea' in config:
-        # 展平NNEA配置
-        # 直接使用嵌套配置结构，不进行flatten
+        # Flatten NNEA configuration
+        # Directly use nested configuration structure, no flattening
         model_config = config
     else:
         model_config = config
     
-    if model_type == 'nnea':
-        logger.info("构建NNEA分类器")
+    if model_type == 'nnea_classifier':
+        logger.info("Building NNEA Classifier")
         return NNEAClassifier(model_config)
     elif model_type == 'nnea_regression':
-        logger.info("构建NNEA回归器")
+        logger.info("Building NNEA Regressor")
         return NNEARegresser(model_config)
     elif model_type == 'nnea_survival':
-        logger.info("构建NNEA生存分析模型")
+        logger.info("Building NNEA Survival Analysis Model")
         return NNEASurvival(model_config)
     elif model_type == 'nnea_autoencoder':
-        logger.info("构建NNEA自编码器")
+        logger.info("Building NNEA Autoencoder")
         return NNEAAutoencoder(model_config)
     elif model_type == 'nnea_umap':
-        logger.info("构建NNEA UMAP模型")
+        logger.info("Building NNEA UMAP Model")
         return NNEAUMAP(model_config)
     else:
-        raise ValueError(f"不支持的模型类型: {model_type}")
+        raise ValueError(f"Unsupported model type: {model_type}")
 
 def build(nadata) -> None:
     """
-    构建模型并添加到nadata的Model容器中
+    Build model and add to nadata's Model container
     
     Args:
-        nadata: nadata对象
+        nadata: nadata object
     """
     if nadata is None:
-        raise ValueError("nadata对象不能为空")
+        raise ValueError("nadata object cannot be empty")
     
-    # 获取模型配置
+    # Get model configuration
     config = nadata.Model.get_config()
     if not config:
-        # 如果没有配置，尝试从nadata.config获取（向后兼容）
+        # If no configuration, try to get from nadata.config (backward compatibility)
         config = getattr(nadata, 'config', {})
         if config:
             nadata.Model.set_config(config)
     
     model_type = config.get('global', {}).get('model', 'nnea')
     
-    # 构建模型
+    # Build model
     model = build_model(config)
     
-    # 构建模型
+    # Build model
     model.build(nadata)
     
-    # 打印模型结构信息
+    # Print model structure information
     if model_type == 'nnea' and hasattr(model, 'model'):
         print_model_structure(model.model)
     
-    # 保存到nadata的Model容器
+    # Save to nadata's Model container
     nadata.Model.add_model(model_type, model)
     
-    logger.info(f"模型已构建并添加到nadata.Model: {model_type}")
+    logger.info(f"Model built and added to nadata.Model: {model_type}")
 
 def print_model_structure(model):
     """
-    打印NNEA模型的结构信息，特别是geneset_layer和focus_layer
+    Print NNEA model structure information, particularly geneset_layer and focus_layer
     
     Args:
-        model: NNEAModel实例
+        model: NNEAModel instance
     """
     print("\n" + "="*60)
-    print("🔍 NNEA模型结构分析")
+    print("🔍 NNEA Model Structure Analysis")
     print("="*60)
     
-    # 打印geneset_layer结构
+    # Print geneset_layer structure
     if hasattr(model, 'geneset_layer'):
-        print("\n📊 Geneset Layer 结构:")
+        print("\n📊 Geneset Layer Structure:")
         print("-" * 40)
         geneset_layer = model.geneset_layer
-        print(f"类型: {type(geneset_layer).__name__}")
-        print(f"基因数量: {geneset_layer.num_genes}")
-        print(f"基因集数量: {geneset_layer.num_sets}")
-        print(f"最小基因集大小: {geneset_layer.min_set_size}")
-        print(f"最大基因集大小: {geneset_layer.max_set_size}")
-        print(f"先验知识: {'是' if geneset_layer.piror_knowledge is not None else '否'}")
-        print(f"冻结先验: {geneset_layer.freeze_piror}")
-        print(f"Dropout率: {geneset_layer.geneset_dropout.p}")
+        print(f"Type: {type(geneset_layer).__name__}")
+        print(f"Number of genes: {geneset_layer.num_genes}")
+        print(f"Number of gene sets: {geneset_layer.num_sets}")
+        print(f"Minimum gene set size: {geneset_layer.min_set_size}")
+        print(f"Maximum gene set size: {geneset_layer.max_set_size}")
+        print(f"Prior knowledge: {'Yes' if geneset_layer.piror_knowledge is not None else 'No'}")
+        print(f"Freeze prior: {geneset_layer.freeze_piror}")
+        print(f"Dropout rate: {geneset_layer.geneset_dropout.p}")
         
-        # 打印基因集成员关系矩阵的形状
+        # Print shape of gene set membership matrix
         if hasattr(geneset_layer, 'set_membership'):
             membership_shape = geneset_layer.set_membership.shape
-            print(f"基因集成员关系矩阵形状: {membership_shape}")
+            print(f"Gene set membership matrix shape: {membership_shape}")
             
-            # 计算稀疏性
+            # Calculate sparsity
             membership = geneset_layer.set_membership.detach()
             sparsity = (membership == 0).float().mean().item()
-            print(f"成员关系矩阵稀疏性: {sparsity:.3f}")
+            print(f"Membership matrix sparsity: {sparsity:.3f}")
     
-    # 打印focus_layer结构
+    # Print focus_layer structure
     if hasattr(model, 'focus_layer'):
-        print("\n🎯 Focus Layer 结构:")
+        print("\n🎯 Focus Layer Structure:")
         print("-" * 40)
         focus_layer = model.focus_layer
-        print(f"类型: {type(focus_layer).__name__}")
+        print(f"Type: {type(focus_layer).__name__}")
         
-        # 分析focus_layer的组成
+        # Analyze composition of focus_layer
         if isinstance(focus_layer, nn.Sequential):
-            print(f"层数: {len(focus_layer)}")
+            print(f"Number of layers: {len(focus_layer)}")
             for i, layer in enumerate(focus_layer):
-                print(f"  层 {i+1}: {type(layer).__name__}")
+                print(f"  Layer {i+1}: {type(layer).__name__}")
                 if hasattr(layer, 'in_features') and hasattr(layer, 'out_features'):
-                    print(f"    输入维度: {layer.in_features}")
-                    print(f"    输出维度: {layer.out_features}")
+                    print(f"    Input dimension: {layer.in_features}")
+                    print(f"    Output dimension: {layer.out_features}")
         else:
-            print(f"层结构: {focus_layer}")
+            print(f"Layer structure: {focus_layer}")
     
-    # 打印生物学约束层
+    # Print biological constraint layer
     if hasattr(model, 'bio_constraint_layer') and model.bio_constraint_layer is not None:
         print("\n🧬 Biological Constraint Layer:")
         print("-" * 40)
         bio_layer = model.bio_constraint_layer
-        print(f"类型: {type(bio_layer).__name__}")
-        print(f"输入维度: {bio_layer.input_dim}")
-        print(f"先验知识形状: {bio_layer.piror_knowledge.shape}")
+        print(f"Type: {type(bio_layer).__name__}")
+        print(f"Input dimension: {bio_layer.input_dim}")
+        print(f"Prior knowledge shape: {bio_layer.piror_knowledge.shape}")
     
-    # 打印模型总体信息
-    print("\n📈 模型总体信息:")
+    # Print overall model information
+    print("\n📈 Overall Model Information:")
     print("-" * 40)
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"总参数数量: {total_params:,}")
-    print(f"可训练参数数量: {trainable_params:,}")
-    print(f"设备: {next(model.parameters()).device}")
+    print(f"Total number of parameters: {total_params:,}")
+    print(f"Number of trainable parameters: {trainable_params:,}")
+    print(f"Device: {next(model.parameters()).device}")
     
     print("\n" + "="*60)
 
 def train(nadata, model_name: Optional[str] = None, verbose: int = 1) -> Dict[str, Any]:
     """
-    训练模型
+    Train model
     
     Args:
-        nadata: nadata对象
-        model_name: 模型名称，如果为None则使用默认模型
-        verbose: 详细程度，0=只显示进度条，1=显示基本信息，2=显示详细评估结果
+        nadata: nadata object
+        model_name: Model name, if None, use default model
+        verbose: Verbosity, 0=only show progress bar, 1=show basic info, 2=show detailed evaluation results
         
     Returns:
-        训练结果
+        Training results
     """
     if not nadata.Model.models:
-        raise ValueError("nadata.Model中没有模型，请先调用build()")
+        raise ValueError("nadata.Model has no models, please call build() first")
     
-    # 确定要训练的模型
+    # Determine which model to train
     if model_name is None:
         model_type = nadata.Model.get_config().get('global', {}).get('model', 'nnea')
         model = nadata.Model.get_model(model_type)
@@ -198,104 +198,104 @@ def train(nadata, model_name: Optional[str] = None, verbose: int = 1) -> Dict[st
         model = nadata.Model.get_model(model_name)
     
     if model is None:
-        raise ValueError(f"未找到模型: {model_name or 'default'}")
+        raise ValueError(f"Model not found: {model_name or 'default'}")
     
-    # 检查是否启用tailor策略
+    # Check if tailor strategy is enabled
     config = nadata.Model.get_config()
     training_config = config.get('training', {})
     tailor_enabled = training_config.get('tailor', False)
     
     if tailor_enabled:
-        # 使用tailor训练策略
+        # Use tailor training strategy
         train_results = _train_with_tailor(nadata, model, verbose=verbose)
     else:
-        # 使用标准训练策略
+        # Use standard training strategy
         train_results = model.train(nadata, verbose=verbose)
     
-    # 保存训练结果到Model容器
+    # Save training results to Model container
     nadata.Model.set_train_results(train_results)
     
     return train_results
 
 def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
     """
-    使用循环tailor策略训练模型，每过tailor_epoch个epoch都进行模型裁剪
-    添加早停机制：如果连续3次tailor后验证损失没有下降，则停止训练
+    Train model using loop tailor strategy, model pruning every tailor_epoch epochs
+    Add early stopping mechanism: if validation loss does not decrease for 3 consecutive tailor epochs, stop training
     
     Args:
-        nadata: nadata对象
-        model: 模型实例
-        verbose: 详细程度
+        nadata: nadata object
+        model: Model instance
+        verbose: Verbosity
         
     Returns:
-        训练结果
+        Training results
     """
     config = nadata.Model.get_config()
     training_config = config.get('training', {})
     
-    # 获取tailor相关参数
+    # Get tailor related parameters
     tailor_epoch = training_config.get('tailor_epoch', 20)
     tailor_geneset = training_config.get('tailor_geneset', 2)
     total_epochs = training_config.get('epochs', 100)
     
-    # 获取输出目录（已在set_config中创建）
+    # Get output directory (created in set_config)
     outdir = config.get('global', {}).get('outdir', 'experiment/test')
     
     logger = logging.getLogger(__name__)
-    logger.info(f"启用循环tailor策略: tailor_epoch={tailor_epoch}, tailor_geneset={tailor_geneset}, total_epochs={total_epochs}")
-    logger.info(f"输出目录: {outdir}")
+    logger.info(f"Enabling loop tailor strategy: tailor_epoch={tailor_epoch}, tailor_geneset={tailor_geneset}, total_epochs={total_epochs}")
+    logger.info(f"Output directory: {outdir}")
     
-    # 初始化变量
+    # Initialize variables
     current_model = model
     current_epoch = 0
     stage_results = []
     tailor_history = []
     model_type = config.get('global', {}).get('model', 'nnea')
     
-    # 早停机制变量
+    # Early stopping variables
     best_val_loss = float('inf')
     best_model_state = None
     best_stage = 0
     no_improvement_count = 0
-    max_no_improvement = 3  # 连续3次tailor后验证损失没有下降则停止
+    max_no_improvement = 3  # Stop if validation loss does not decrease for 3 consecutive tailor epochs
     
-    # 循环训练和裁剪
+    # Loop training and pruning
     while current_epoch < total_epochs:
-        # 计算当前阶段的训练轮数
+        # Calculate number of epochs for current stage
         if current_epoch + tailor_epoch <= total_epochs:
             epochs_to_train = tailor_epoch
         else:
             epochs_to_train = total_epochs - current_epoch
         
         stage_num = len(stage_results) + 1
-        logger.info(f"第{stage_num}阶段训练: 从第{current_epoch}个epoch训练到第{current_epoch + epochs_to_train}个epoch")
+        logger.info(f"Stage {stage_num} training: from epoch {current_epoch} to epoch {current_epoch + epochs_to_train}")
         
-        # 训练当前阶段
+        # Train current stage
         stage_result = current_model.train(nadata, verbose=verbose, max_epochs=epochs_to_train, continue_training=(current_epoch > 0))
         stage_results.append(stage_result)
         
         current_epoch += epochs_to_train
         
-        # 获取当前阶段的验证损失
+        # Get validation loss for current stage
         current_val_loss = stage_result.get('final_val_loss', float('inf'))
         if current_val_loss is None:
             current_val_loss = float('inf')
         
-        logger.info(f"第{stage_num}阶段验证损失: {current_val_loss:.6f}")
+        logger.info(f"Stage {stage_num} validation loss: {current_val_loss:.6f}")
         
-        # 检查是否为最佳模型
+        # Check if it's the best model
         if current_val_loss < best_val_loss:
             best_val_loss = current_val_loss
             best_stage = stage_num
             no_improvement_count = 0
-            # 保存最佳模型状态
+            # Save best model state
             best_model_state = current_model.model.state_dict().copy()
-            logger.info(f"✅ 第{stage_num}阶段验证损失改善到 {best_val_loss:.6f}")
+            logger.info(f"✅ Stage {stage_num} validation loss improved to {best_val_loss:.6f}")
         else:
             no_improvement_count += 1
-            logger.info(f"⚠️ 第{stage_num}阶段验证损失未改善，连续未改善次数: {no_improvement_count}/{max_no_improvement}")
+            logger.info(f"⚠️ Stage {stage_num} validation loss not improved, consecutive no improvement count: {no_improvement_count}/{max_no_improvement}")
         
-        # 保存当前阶段的结果
+        # Save current stage results
         stage_info = {
             'stage': stage_num,
             'epoch': current_epoch,
@@ -305,56 +305,56 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
         }
         tailor_history.append(stage_info)
         
-        logger.info(f"📊 第{stage_num}阶段训练完成，验证损失: {current_val_loss:.6f}")
+        logger.info(f"📊 Stage {stage_num} training completed, validation loss: {current_val_loss:.6f}")
         
-        # 检查早停条件
+        # Check early stopping condition
         if no_improvement_count >= max_no_improvement:
-            logger.info(f"🛑 连续{max_no_improvement}次tailor后验证损失未改善，触发早停！")
-            logger.info(f"   最佳验证损失: {best_val_loss:.6f} (第{best_stage}阶段)")
+            logger.info(f"🛑 Early stopping triggered after {max_no_improvement} consecutive tailor epochs with no improvement in validation loss!")
+            logger.info(f"    Best validation loss: {best_val_loss:.6f} (Stage {best_stage})")
             break
         
-        # 如果还没到总轮数，进行裁剪
+        # If not yet at total epochs, perform pruning
         if current_epoch < total_epochs:
-            logger.info(f"第{stage_num}阶段训练完成，开始裁剪模型...")
+            logger.info(f"Stage {stage_num} training completed, starting model pruning...")
             
-            # 获取基因集重要性
-            logger.info("计算基因集重要性...")
+            # Get gene set importance
+            logger.info("Calculating gene set importance...")
             try:
                 explain_results = current_model.explain(nadata, method='importance')
                 geneset_importance = np.array(explain_results['importance']['geneset_importance'])
-                logger.info(f"基因集重要性计算完成，形状: {geneset_importance.shape}")
+                logger.info(f"Gene set importance calculation completed, shape: {geneset_importance.shape}")
             except Exception as e:
-                logger.error(f"基因集重要性计算失败: {e}")
-                # 使用随机重要性作为备选
+                logger.error(f"Gene set importance calculation failed: {e}")
+                # Use random importance as fallback
                 geneset_importance = np.random.rand(current_model.model.num_genesets)
             
-            # 确定要移除的基因集（最不重要的）
+            # Determine gene sets to remove (least important)
             num_genesets_to_remove = tailor_geneset
             if num_genesets_to_remove >= len(geneset_importance):
-                logger.warning(f"要移除的基因集数量({num_genesets_to_remove})大于等于总基因集数量({len(geneset_importance)})，调整为移除1个")
+                logger.warning(f"Number of gene sets to remove ({num_genesets_to_remove}) is greater than or equal to total gene sets ({len(geneset_importance)}), adjusting to remove 1")
                 num_genesets_to_remove = 1
             
-            # 找到最不重要的基因集索引
+            # Find indices of least important gene sets
             least_important_indices = np.argsort(geneset_importance)[:num_genesets_to_remove]
             important_indices = np.argsort(geneset_importance)[num_genesets_to_remove:]
             
-            # 尝试获取genesets_annotated的key
+            # Try to get genesets_annotated key
             genesets_annotated = nadata.uns.get('nnea_explain', {}).get('importance', {}).get('genesets', {})
             if genesets_annotated:
-                # 获取genesets_annotated的key列表
+                # Get list of geneset keys
                 geneset_keys = list(genesets_annotated.keys())
                 
-                # 将索引映射到geneset key
+                # Map indices to geneset keys
                 removed_keys = [geneset_keys[idx] if idx < len(geneset_keys) else f"Geneset_{idx}" for idx in least_important_indices]
                 kept_keys = [geneset_keys[idx] if idx < len(geneset_keys) else f"Geneset_{idx}" for idx in important_indices]
                 
-                logger.info(f"将移除基因集: {removed_keys}")
-                logger.info(f"保留基因集: {kept_keys}")
+                logger.info(f"Removing gene sets: {removed_keys}")
+                logger.info(f"Keeping gene sets: {kept_keys}")
             else:
-                logger.info(f"将移除基因集索引: {least_important_indices.tolist()}")
-                logger.info(f"保留基因集索引: {important_indices.tolist()}")
+                logger.info(f"Removing gene set indices: {least_important_indices.tolist()}")
+                logger.info(f"Keeping gene set indices: {important_indices.tolist()}")
             
-            # 记录裁剪信息
+            # Record pruning information
             tailor_info = {
                 'stage': stage_num,
                 'epoch': current_epoch,
@@ -367,7 +367,7 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
                 'no_improvement_count': no_improvement_count
             }
             
-            # 如果有genesets_annotated，添加key信息
+            # If genesets_annotated, add key information
             if genesets_annotated:
                 geneset_keys = list(genesets_annotated.keys())
                 removed_keys = [geneset_keys[idx] if idx < len(geneset_keys) else f"Geneset_{idx}" for idx in least_important_indices]
@@ -376,29 +376,29 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
                 tailor_info['kept_geneset_keys'] = kept_keys
             tailor_history.append(tailor_info)
             
-            # 裁剪模型
-            logger.info("开始裁剪模型...")
+            # Prune model
+            logger.info("Starting model pruning...")
             cropped_model = _crop_nnea_model(nadata, current_model, important_indices, config)
             
-            # 更新nadata中的模型
+            # Update model in nadata
             nadata.Model.add_model(f"{model_type}_cropped_stage_{stage_num}", cropped_model)
             
-            # 更新当前模型为裁剪后的模型
+            # Update current model to the cropped model
             current_model = cropped_model
             
-            logger.info(f"第{stage_num}阶段裁剪完成，剩余基因集数量: {len(important_indices)}")
+            logger.info(f"Stage {stage_num} pruning completed, remaining gene sets: {len(important_indices)}")
         else:
-            logger.info("训练完成，无需进一步裁剪")
+            logger.info("Training completed, no further pruning needed")
     
-    # 加载最佳模型
+    # Load best model
     if best_model_state is not None:
-        logger.info(f"🔄 加载最佳模型 (第{best_stage}阶段，验证损失: {best_val_loss:.6f})")
+        logger.info(f"🔄 Loading best model (Stage {best_stage}, validation loss: {best_val_loss:.6f})")
         
-        # 检查当前模型与最佳模型状态的参数维度是否匹配
+        # Check if parameter dimensions of current model match best model state
         current_state_dict = current_model.model.state_dict()
         best_state_dict = best_model_state
         
-        # 检查关键参数维度是否匹配
+        # Check if key parameters match
         dimension_mismatch = False
         mismatch_info = []
         
@@ -409,17 +409,17 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
                     mismatch_info.append(f"{key}: {best_state_dict[key].shape} vs {current_state_dict[key].shape}")
         
         if dimension_mismatch:
-            logger.warning(f"⚠️ 检测到参数维度不匹配，这可能是由于模型裁剪导致的:")
+            logger.warning(f"⚠️ Detected parameter dimension mismatch, which might be due to model pruning:")
             for info in mismatch_info:
                 logger.warning(f"   {info}")
             
-            # 尝试从最佳模型状态重建模型
-            logger.info("🔄 尝试从最佳模型状态重建模型...")
+            # Attempt to reconstruct model from best model state
+            logger.info("🔄 Attempting to reconstruct model from best model state...")
             try:
-                # 从最佳模型状态推断原始配置
+                # Infer original configuration from best model state
                 best_num_genesets = best_state_dict.get('geneset_layer.query_vectors', torch.tensor([])).shape[0]
                 if best_num_genesets > 0:
-                    # 创建与最佳模型状态匹配的配置
+                    # Create configuration matching best model state
                     best_config = config.copy()
                     nnea_config = best_config.get('nnea', {})
                     geneset_config = nnea_config.get('geneset_layer', {})
@@ -427,7 +427,7 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
                     nnea_config['geneset_layer'] = geneset_config
                     best_config['nnea'] = nnea_config
                     
-                    # 创建新的模型实例
+                    # Create new model instance
                     if config.get('global').get('model') == "nnea_classifier":
                         from .nnea_classifier import NNEAClassifier
                         best_model = NNEAClassifier(best_config)
@@ -441,50 +441,50 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
                         best_model = NNEARegresser(best_config)
                         best_model.build(nadata)
 
-                    # 加载最佳模型状态
+                    # Load best model state
                     best_model.model.load_state_dict(best_model_state)
                     best_model.device = current_model.device
                     best_model.model = best_model.model.to(best_model.device)
                     
-                    # 更新当前模型为最佳模型
+                    # Update current model to best model
                     current_model = best_model
-                    logger.info(f"✅ 成功从最佳模型状态重建模型，基因集数量: {best_num_genesets}")
+                    logger.info(f"✅ Successfully reconstructed model from best model state, number of gene sets: {best_num_genesets}")
                 else:
-                    raise ValueError("无法从最佳模型状态推断基因集数量")
+                    raise ValueError("Could not infer number of gene sets from best model state")
                     
             except Exception as e:
-                logger.error(f"❌ 从最佳模型状态重建模型失败: {e}")
-                logger.warning("⚠️ 将使用当前模型作为最终模型")
-                # 保存当前模型作为最终模型
+                logger.error(f"❌ Failed to reconstruct model from best model state: {e}")
+                logger.warning("⚠️ Using current model as final model")
+                # Save current model as final model
                 final_model_path = os.path.join(outdir, "final_model.pth")
                 torch.save(current_model.model.state_dict(), final_model_path)
-                logger.info(f"💾 当前模型已保存到: {final_model_path}")
+                logger.info(f"💾 Current model saved to: {final_model_path}")
         else:
-            # 参数维度匹配，直接加载
+            # Parameter dimensions match, load directly
             current_model.model.load_state_dict(best_model_state)
         
-        # 更新nadata中的模型为最佳模型
+        # Update model in nadata to best model
         nadata.Model.add_model(f"{model_type}_best", current_model)
         
-        # 保存最终的最佳模型
+        # Save final best model
         final_best_model_path = os.path.join(outdir, "best_model_final.pth")
         torch.save(best_model_state, final_best_model_path)
         
         final_best_nadata_path = os.path.join(outdir, "best_nadata_final.pkl")
         try:
             nadata.save(final_best_nadata_path, format="pickle", save_data=True)
-            logger.info(f"💾 最终最佳模型已保存到: {final_best_model_path}")
-            logger.info(f"💾 最终最佳nadata已保存到: {final_best_nadata_path}")
+            logger.info(f"💾 Final best model saved to: {final_best_model_path}")
+            logger.info(f"💾 Final best nadata saved to: {final_best_nadata_path}")
         except Exception as e:
-            logger.error(f"保存最终最佳模型失败: {e}")
+            logger.error(f"Failed to save final best model: {e}")
     else:
-        logger.warning("⚠️ 未找到最佳模型状态，使用当前模型")
-        # 保存当前模型作为最终模型
+        logger.warning("⚠️ Best model state not found, using current model")
+        # Save current model as final model
         final_model_path = os.path.join(outdir, "final_model.pth")
         torch.save(current_model.model.state_dict(), final_model_path)
-        logger.info(f"💾 当前模型已保存到: {final_model_path}")
+        logger.info(f"💾 Current model saved to: {final_model_path}")
     
-    # 合并训练结果
+    # Combine training results
     combined_results = {
         'stage_results': stage_results,
         'tailor_history': tailor_history,
@@ -500,33 +500,33 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
         }
     }
     
-    logger.info(f"循环Tailor策略训练完成，共进行了{len(stage_results)}个阶段")
+    logger.info(f"Loop Tailor strategy training completed, {len(stage_results)} stages performed")
     if no_improvement_count >= max_no_improvement:
-        logger.info(f"训练因早停而结束，最佳模型来自第{best_stage}阶段")
+        logger.info(f"Training ended due to early stopping, best model from Stage {best_stage}")
     else:
-        logger.info(f"训练正常完成，最佳模型来自第{best_stage}阶段")
+        logger.info(f"Training completed normally, best model from Stage {best_stage}")
     
     return combined_results
 
 def _crop_nnea_model(nadata, model, important_indices: np.ndarray, config: Dict[str, Any]):
     """
-    裁剪NNEA模型，移除不重要的基因集
+    Prune NNEA model, remove unimportant gene sets
     
     Args:
-        nadata: nadata对象
-        model: 原始模型
-        important_indices: 要保留的基因集索引
-        config: 模型配置
+        nadata: nadata object
+        model: Original model
+        important_indices: Indices of gene sets to keep
+        config: Model configuration
         
     Returns:
-        裁剪后的模型
+        Pruned model
     """
     logger = logging.getLogger(__name__)
     
-    # 创建新的配置
+    # Create new configuration
     cropped_config = config.copy()
     
-    # 更新基因集数量
+    # Update number of gene sets
     nnea_config = cropped_config.get('nnea', {})
     geneset_config = nnea_config.get('geneset_layer', {})
     original_num_genesets = geneset_config.get('num_genesets', 20)
@@ -536,9 +536,9 @@ def _crop_nnea_model(nadata, model, important_indices: np.ndarray, config: Dict[
     nnea_config['geneset_layer'] = geneset_config
     cropped_config['nnea'] = nnea_config
     
-    logger.info(f"裁剪基因集数量: {original_num_genesets} -> {new_num_genesets}")
+    logger.info(f"Gene set count pruned: {original_num_genesets} -> {new_num_genesets}")
     
-    # 创建新的模型实例
+    # Create new model instance
     if cropped_config.get('global').get("model") == 'nnea_classifier':
         from .nnea_classifier import NNEAClassifier
         cropped_model = NNEAClassifier(cropped_config)
@@ -548,66 +548,44 @@ def _crop_nnea_model(nadata, model, important_indices: np.ndarray, config: Dict[
     elif cropped_config.get('global').get('model') == 'nnea_regression':
         from .nnea_regresser import NNEARegresser
         cropped_model = NNEARegresser(cropped_config)
-    # 构建新模型
+    # Build new model
     cropped_model.build(nadata)
     
-    # 获取原始模型的基因集层参数
+    # Get gene set layer parameters from original model
     original_geneset_params = model.model.geneset_layer.get_geneset_parameters()
     
-    # 设置裁剪后模型的基因集层参数
+    # Set gene set layer parameters for the pruned model
     important_indices_tensor = torch.tensor(important_indices, dtype=torch.long)
     cropped_model.model.geneset_layer.set_geneset_parameters(original_geneset_params, important_indices_tensor)
-    
-    # 复制其他层的参数
-    # original_state_dict = model.model.state_dict()
-    # cropped_state_dict = cropped_model.model.state_dict()
-    #
-    # for key in original_state_dict:
-    #     if key not in cropped_state_dict:
-    #         continue
-    #
-    #     # 跳过基因集层的参数，因为已经单独处理
-    #     if 'geneset_layer' in key:
-    #         continue
-    #     else:
-    #         # 非基因集层参数直接复制
-    #         cropped_state_dict[key] = original_state_dict[key]
-    #
-    # # 特殊处理focus_layer的第一层参数
-    # # 由于geneset_layer的输出维度发生了变化，focus_layer的第一层需要相应调整
-    # # _update_focus_layer_parameters(model.model, cropped_model.model, important_indices)
-    #
-    # # 加载裁剪后的参数
-    # cropped_model.model.load_state_dict(cropped_state_dict)
-    
-    # 设置设备
+
+    # Set device
     cropped_model.device = model.device
     cropped_model.model = cropped_model.model.to(cropped_model.device)
     
-    logger.info("模型裁剪完成")
+    logger.info("Model pruning completed")
     return cropped_model
 
 
 def _update_focus_layer_parameters(original_model, cropped_model, important_indices: np.ndarray):
     """
-    更新focus_layer的参数，以适应geneset_layer输出维度的变化
+    Update focus_layer parameters to adapt to the change in geneset_layer output dimensions
     
     Args:
-        original_model: 原始模型
-        cropped_model: 裁剪后的模型
-        important_indices: 要保留的基因集索引
+        original_model: Original model
+        cropped_model: Pruned model
+        important_indices: Indices of gene sets to keep
     """
     logger = logging.getLogger(__name__)
     
-    # 获取原始和裁剪后的focus_layer
+    # Get original and pruned focus_layer
     original_focus_layer = original_model.focus_layer
     cropped_focus_layer = cropped_model.focus_layer
     
     if not isinstance(original_focus_layer, nn.Sequential) or not isinstance(cropped_focus_layer, nn.Sequential):
-        logger.warning("focus_layer不是Sequential结构，跳过参数更新")
+        logger.warning("focus_layer is not a Sequential structure, skipping parameter update")
         return
     
-    # 找到第一个Linear层（通常是focus_layer的第一层）
+    # Find the first Linear layer (usually the first layer of focus_layer)
     first_linear_layer = None
     first_linear_idx = None
     
@@ -618,57 +596,57 @@ def _update_focus_layer_parameters(original_model, cropped_model, important_indi
             break
     
     if first_linear_layer is None:
-        logger.warning("未找到Linear层，跳过focus_layer参数更新")
+        logger.warning("Linear layer not found, skipping focus_layer parameter update")
         return
     
-    # 获取裁剪后模型的第一层Linear层
+    # Get the first Linear layer of the pruned model
     cropped_first_linear = cropped_focus_layer[first_linear_idx]
     
     if not isinstance(cropped_first_linear, nn.Linear):
-        logger.warning("裁剪后模型的第一层不是Linear层，跳过参数更新")
+        logger.warning("The first layer of the pruned model is not a Linear layer, skipping parameter update")
         return
     
-    # 检查维度是否匹配
+    # Check if dimensions match
     original_input_dim = first_linear_layer.in_features
     cropped_input_dim = cropped_first_linear.in_features
     
     if original_input_dim != len(important_indices):
-        logger.warning(f"维度不匹配: 原始输入维度 {original_input_dim}, 重要索引数量 {len(important_indices)}")
+        logger.warning(f"Dimension mismatch: Original input dimension {original_input_dim}, number of important indices {len(important_indices)}")
         return
     
-    # 更新权重：只保留对应重要基因集的权重
+    # Update weights: only keep weights corresponding to important gene sets
     original_weight = first_linear_layer.weight.data
     original_bias = first_linear_layer.bias.data if first_linear_layer.bias is not None else None
     
-    # 选择对应重要基因集的权重行
+    # Select rows of weights corresponding to important gene sets
     important_indices_tensor = torch.tensor(important_indices, dtype=torch.long, device=original_weight.device)
     cropped_weight = original_weight[:, important_indices_tensor]
     
-    # 更新裁剪后模型的权重
+    # Update weights of the pruned model
     cropped_first_linear.weight.data = cropped_weight
     
-    # 偏置项保持不变（如果有的话）
+    # Bias term remains unchanged (if any)
     if original_bias is not None and cropped_first_linear.bias is not None:
         cropped_first_linear.bias.data = original_bias.clone()
     
-    logger.info(f"focus_layer第一层参数更新完成: 输入维度 {original_input_dim} -> {cropped_input_dim}")
+    logger.info(f"focus_layer first layer parameter update completed: Input dimension {original_input_dim} -> {cropped_input_dim}")
 
 def eval(nadata, split='test', model_name: Optional[str] = None) -> Dict[str, float]:
     """
-    评估模型
+    Evaluate model
     
     Args:
-        nadata: nadata对象
-        split: 评估的数据集分割
-        model_name: 模型名称
+        nadata: nadata object
+        split: Data split for evaluation
+        model_name: Model name
         
     Returns:
-        评估结果
+        Evaluation results
     """
     if not nadata.Model.models:
-        raise ValueError("nadata.Model中没有模型，请先调用build()")
+        raise ValueError("nadata.Model has no models, please call build() first")
     
-    # 确定要评估的模型
+    # Determine which model to evaluate
     if model_name is None:
         model_type = nadata.Model.get_config().get('global', {}).get('model', 'nnea')
         model = nadata.Model.get_model(model_type)
@@ -676,27 +654,27 @@ def eval(nadata, split='test', model_name: Optional[str] = None) -> Dict[str, fl
         model = nadata.Model.get_model(model_name)
     
     if model is None:
-        raise ValueError(f"未找到模型: {model_name or 'default'}")
+        raise ValueError(f"Model not found: {model_name or 'default'}")
     
-    # 评估模型
+    # Evaluate model
     return model.evaluate(nadata, split)
 
 def explain(nadata, method='importance', model_name: Optional[str] = None) -> Dict[str, Any]:
     """
-    解释模型
+    Explain model
     
     Args:
-        nadata: nadata对象
-        method: 解释方法
-        model_name: 模型名称
+        nadata: nadata object
+        method: Explanation method
+        model_name: Model name
         
     Returns:
-        解释结果
+        Explanation results
     """
     if not nadata.Model.models:
-        raise ValueError("nadata.Model中没有模型，请先调用build()")
+        raise ValueError("nadata.Model has no models, please call build() first")
     
-    # 确定要解释的模型
+    # Determine which model to explain
     if model_name is None:
         model_type = nadata.Model.get_config().get('global', {}).get('model', 'nnea')
         model = nadata.Model.get_model(model_type)
@@ -704,56 +682,56 @@ def explain(nadata, method='importance', model_name: Optional[str] = None) -> Di
         model = nadata.Model.get_model(model_name)
     
     if model is None:
-        raise ValueError(f"未找到模型: {model_name or 'default'}")
+        raise ValueError(f"Model not found: {model_name or 'default'}")
     
-    # 解释模型
+    # Explain model
     return model.explain(nadata, method)
 
 def save_model(nadata, save_path: str, model_name: Optional[str] = None) -> None:
     """
-    保存模型或整个nadata项目
+    Save model or entire nadata project
     
     Args:
-        nadata: nadata对象
-        save_path: 保存路径
-        model_name: 模型名称，如果为None则保存整个项目
+        nadata: nadata object
+        save_path: Save path
+        model_name: Model name, if None, save entire project
     """
     if model_name is None:
-        # 保存整个项目
+        # Save entire project
         nadata.save(save_path)
-        logger.info(f"项目已保存到: {save_path}")
+        logger.info(f"Project saved to: {save_path}")
     else:
-        # 保存特定模型
+        # Save specific model
         model = nadata.Model.get_model(model_name)
         if model is None:
-            raise ValueError(f"未找到模型: {model_name}")
+            raise ValueError(f"Model not found: {model_name}")
         
-        # 保存模型状态
+        # Save model state
         torch.save(model.state_dict(), save_path)
-        logger.info(f"模型 {model_name} 已保存到: {save_path}")
+        logger.info(f"Model {model_name} saved to: {save_path}")
 
 def load_project(load_path: str):
     """
-    加载nadata项目
+    Load nadata project
     
     Args:
-        load_path: 加载路径
+        load_path: Load path
         
     Returns:
-        nadata对象
+        nadata object
     """
     from ..io._load import load_project as load_project_impl
     return load_project_impl(load_path)
 
 def get_summary(nadata) -> Dict[str, Any]:
     """
-    获取nadata摘要信息
+    Get nadata summary information
     
     Args:
-        nadata: nadata对象
+        nadata: nadata object
         
     Returns:
-        摘要信息字典
+        Summary information dictionary
     """
     summary = {
         'data_info': {},
@@ -761,7 +739,7 @@ def get_summary(nadata) -> Dict[str, Any]:
         'config_info': {}
     }
     
-    # 数据信息
+    # Data information
     if nadata.X is not None:
         summary['data_info']['X_shape'] = nadata.X.shape
     if nadata.Meta is not None:
@@ -771,12 +749,12 @@ def get_summary(nadata) -> Dict[str, Any]:
     if nadata.Prior is not None:
         summary['data_info']['Prior_shape'] = nadata.Prior.shape
     
-    # 模型信息
+    # Model information
     summary['model_info']['models'] = nadata.Model.list_models()
     summary['model_info']['config_keys'] = list(nadata.Model.get_config().keys())
     summary['model_info']['train_results_keys'] = list(nadata.Model.get_train_results().keys())
     
-    # 配置信息
+    # Configuration information
     config = nadata.Model.get_config()
     if config:
         summary['config_info']['model_type'] = config.get('global', {}).get('model', 'unknown')
@@ -787,15 +765,15 @@ def get_summary(nadata) -> Dict[str, Any]:
 
 def train_classification_models(nadata, config: Optional[Dict[str, Any]] = None, verbose: int = 1) -> Dict[str, Any]:
     """
-    训练分类模型
+    Train classification models
     
     Args:
-        nadata: nadata对象
-        config: 配置字典
-        verbose: 详细程度
+        nadata: nadata object
+        config: Configuration dictionary
+        verbose: Verbosity
         
     Returns:
-        训练结果
+        Training results
     """
     from sklearn.linear_model import LogisticRegression
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -803,23 +781,23 @@ def train_classification_models(nadata, config: Optional[Dict[str, Any]] = None,
     from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
     import numpy as np
     
-    # 获取配置
+    # Get configuration
     if config is None:
         config = nadata.Model.get_config()
     
-    # 获取数据
+    # Get data
     X_train = nadata.X[:, nadata.Model.get_indices('train')]
     X_test = nadata.X[:, nadata.Model.get_indices('test')]
     
-    # 获取目标列名称
-    target_column = 'class'  # 默认使用'class'
+    # Get target column name
+    target_column = 'class'  # Default to 'class'
     if config and 'dataset' in config:
         target_column = config['dataset'].get('target_column', 'class')
     
     y_train = nadata.Meta.iloc[nadata.Model.get_indices('train')][target_column].values
     y_test = nadata.Meta.iloc[nadata.Model.get_indices('test')][target_column].values
     
-    # 定义要训练的模型
+    # Define models to train
     models_to_train = config.get('classification', {}).get('models', ['logistic_regression', 'random_forest'])
     
     results = {
@@ -829,7 +807,7 @@ def train_classification_models(nadata, config: Optional[Dict[str, Any]] = None,
     
     for model_name in models_to_train:
         if verbose >= 1:
-            print(f"训练 {model_name}...")
+            print(f"Training {model_name}...")
         
         if model_name == 'logistic_regression':
             model = LogisticRegression(random_state=42, max_iter=1000)
@@ -841,21 +819,21 @@ def train_classification_models(nadata, config: Optional[Dict[str, Any]] = None,
             model = SVC(probability=True, random_state=42)
         else:
             if verbose >= 1:
-                print(f"跳过未知模型: {model_name}")
+                print(f"Skipping unknown model: {model_name}")
             continue
         
-        # 训练模型
+        # Train model
         model.fit(X_train.T, y_train)
         
-        # 预测
+        # Predict
         y_pred = model.predict(X_test.T)
         y_pred_proba = model.predict_proba(X_test.T)[:, 1]
         
-        # 计算指标
+        # Calculate metrics
         accuracy = accuracy_score(y_test, y_pred)
         auc = roc_auc_score(y_test, y_pred_proba)
         
-        # 保存结果
+        # Save results
         results['models'][model_name] = {
             'model': model,
             'accuracy': accuracy,
@@ -864,13 +842,13 @@ def train_classification_models(nadata, config: Optional[Dict[str, Any]] = None,
             'probabilities': y_pred_proba
         }
         
-        # 添加到nadata的Model容器
+        # Add to nadata's Model container
         nadata.Model.add_model(f'classification_{model_name}', model)
         
         if verbose >= 1:
-            print(f"  {model_name} - 准确率: {accuracy:.4f}, AUC: {auc:.4f}")
+            print(f"  {model_name} - Accuracy: {accuracy:.4f}, AUC: {auc:.4f}")
     
-    # 创建比较DataFrame
+    # Create comparison DataFrame
     if results['models']:
         comparison_data = []
         for name, result in results['models'].items():
@@ -887,35 +865,35 @@ def train_classification_models(nadata, config: Optional[Dict[str, Any]] = None,
 
 def compare_models(nadata, config: Optional[Dict[str, Any]] = None, verbose: int = 1) -> Dict[str, Any]:
     """
-    比较不同模型的性能
+    Compare performance of different models
     
     Args:
-        nadata: nadata对象
-        config: 配置字典
-        verbose: 详细程度
+        nadata: nadata object
+        config: Configuration dictionary
+        verbose: Verbosity
         
     Returns:
-        比较结果
+        Comparison results
     """
-    # 获取所有模型
+    # Get all models
     all_models = nadata.Model.list_models()
     
     if verbose >= 1:
-        print(f"比较 {len(all_models)} 个模型: {all_models}")
+        print(f"Comparing {len(all_models)} models: {all_models}")
     
     results = {
         'models': {},
         'comparison_df': None
     }
     
-    # 获取测试数据
+    # Get test data
     test_indices = nadata.Model.get_indices('test')
     if test_indices is None:
-        raise ValueError("没有找到测试集索引")
+        raise ValueError("Test set indices not found")
     
     X_test = nadata.X[:, test_indices]
     
-    # 获取目标列名
+    # Get target column name
     target_column = nadata.Model.get_config().get('dataset', {}).get('target_column', 'class')
     y_test = nadata.Meta.iloc[test_indices][target_column].values
     
@@ -925,15 +903,15 @@ def compare_models(nadata, config: Optional[Dict[str, Any]] = None, verbose: int
             continue
         
         if verbose >= 1:
-            print(f"评估 {model_name}...")
+            print(f"Evaluating {model_name}...")
         
         try:
-            # 对于NNEA模型
+            # For NNEA models
             if hasattr(model, 'evaluate'):
                 eval_result = model.evaluate(nadata, 'test')
                 results['models'][model_name] = eval_result
             else:
-                # 对于sklearn模型
+                # For sklearn models
                 y_pred = model.predict(X_test.T)
                 y_pred_proba = model.predict_proba(X_test.T)[:, 1]
                 
@@ -948,16 +926,16 @@ def compare_models(nadata, config: Optional[Dict[str, Any]] = None, verbose: int
             
             if verbose >= 1:
                 if 'accuracy' in results['models'][model_name]:
-                    print(f"  {model_name} - 准确率: {results['models'][model_name]['accuracy']:.4f}")
+                    print(f"  {model_name} - Accuracy: {results['models'][model_name]['accuracy']:.4f}")
                 if 'auc' in results['models'][model_name]:
                     print(f"  {model_name} - AUC: {results['models'][model_name]['auc']:.4f}")
                     
         except Exception as e:
             if verbose >= 1:
-                print(f"  评估 {model_name} 失败: {e}")
+                print(f"   Evaluation of {model_name} failed: {e}")
             continue
     
-    # 创建比较DataFrame
+    # Create comparison DataFrame
     if results['models']:
         comparison_data = []
         for name, result in results['models'].items():
@@ -975,16 +953,16 @@ def compare_models(nadata, config: Optional[Dict[str, Any]] = None, verbose: int
 
 def predict(nadata, split='test', model_name: Optional[str] = None, return_probabilities: bool = True) -> Dict[str, Any]:
     """
-    模型预测
+    Model prediction
 
     Args:
-        nadata: nadata对象
-        split: 预测的数据集分割
-        model_name: 模型名称
-        return_probabilities: 是否返回概率值
+        nadata: nadata object
+        split: Data split for prediction
+        model_name: Model name
+        return_probabilities: Whether to return probability values
 
     Returns:
-        预测结果字典，包含预测值、概率值、真实标签等
+        Prediction results dictionary, including predicted values, probability values, true labels, etc.
     """
     from sklearn.metrics import classification_report, roc_auc_score, mean_squared_error, mean_absolute_error, r2_score
     import torch
@@ -992,9 +970,9 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
     logger = logging.getLogger(__name__)
 
     if not nadata.Model.models:
-        raise ValueError("nadata.Model中没有模型，请先调用build()")
+        raise ValueError("nadata.Model has no models, please call build() first")
 
-    # 确定要预测的模型
+    # Determine which model to predict
     if model_name is None:
         model_type = nadata.Model.get_config().get('global', {}).get('model', 'nnea')
         model = nadata.Model.get_model(model_type)
@@ -1002,67 +980,67 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
         model = nadata.Model.get_model(model_name)
 
     if model is None:
-        raise ValueError(f"未找到模型: {model_name or 'default'}")
+        raise ValueError(f"Model not found: {model_name or 'default'}")
 
-    # 获取数据索引
+    # Get data indices
     indices = nadata.Model.get_indices(split)
     if indices is None:
-        logger.warning(f"未找到{split}集的索引，无法进行预测")
+        logger.warning(f"Indices for {split} set not found, cannot perform prediction")
         return {
             'y_test': None,
             'y_pred': None,
             'y_proba': None,
             'predictions': None,
-            'error': f"未找到{split}集的索引"
+            'error': f"Indices for {split} set not found"
         }
 
     try:
-        # 获取测试集数据
-        X_test = nadata.X[indices]  # 转置为(样本数, 特征数)
+        # Get test set data
+        X_test = nadata.X[indices]  # Transpose to (number of samples, number of features)
 
-        # 获取目标列名
+        # Get target column name
         config = nadata.Model.get_config()
         target_col = config.get('dataset', {}).get('target_column', 'target')
         y_test = nadata.Meta.iloc[indices][target_col].values
 
-        logger.info(f"🔮 进行模型预测...")
-        logger.info(f"📊 测试集形状: X_test={X_test.shape}, y_test={y_test.shape}")
+        logger.info(f"🔮 Performing model prediction...")
+        logger.info(f"�� Test set shape: X_test={X_test.shape}, y_test={y_test.shape}")
 
-        # 模型预测
+        # Model prediction
         model.model.eval()
         with torch.no_grad():
             X_test_tensor = torch.FloatTensor(X_test).to(model.device)
             outputs = model.model(X_test_tensor)
 
-        # 根据任务类型处理预测结果
+        # Process prediction results based on task type
         task_type = getattr(model, 'task', 'classification')
         
         if task_type == 'classification':
-            # 分类任务处理
+            # Classification task handling
             if outputs.shape[1] == 2:
-                # 二分类情况
+                # Binary classification case
                 y_proba = torch.softmax(outputs, dim=1).cpu().numpy()[:, 1]
                 y_pred = (y_proba > 0.5).astype(int)
             else:
-                # 多分类情况
+                # Multi-classification case
                 y_proba = torch.softmax(outputs, dim=1).cpu().numpy()
                 y_pred = np.argmax(y_proba, axis=1)
 
-            # 计算评估指标
+            # Calculate evaluation metrics
             if len(np.unique(y_test)) == 2:
-                # 二分类
+                # Binary classification
                 auc = roc_auc_score(y_test, y_proba)
-                logger.info(f"📊 测试集AUC：{auc:.4f}")
+                logger.info(f"📊 Test set AUC: {auc:.4f}")
             else:
-                # 多分类
+                # Multi-classification
                 auc = roc_auc_score(y_test, y_proba, multi_class='ovr')
-                logger.info(f"📊 测试集AUC：{auc:.4f}")
+                logger.info(f"📊 Test set AUC: {auc:.4f}")
 
-            # 输出分类报告
-            logger.info("📊 预测结果:")
-            logger.info(f"测试集分类报告：\n{classification_report(y_test, y_pred)}")
+            # Output classification report
+            logger.info("📊 Prediction results:")
+            logger.info(f"Test set classification report:\n{classification_report(y_test, y_pred)}")
 
-            # 保存预测结果到Model容器
+            # Save prediction results to Model container
             prediction_results = {
                 'y_test': y_test,
                 'y_pred': y_pred,
@@ -1074,23 +1052,23 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
             }
 
         elif task_type == 'survival':
-            # 生存任务处理
+            # Survival task handling
             time_col = config.get('dataset', {}).get('time_column', 'Time')
             event_col = config.get('dataset', {}).get('event_column', 'Event')
             
             times = nadata.Meta.iloc[indices][time_col].values
             events = nadata.Meta.iloc[indices][event_col].values
             
-            # 生存分析预测结果
+            # Survival analysis prediction results
             risk_scores = outputs.cpu().numpy().flatten()
             
-            # 计算生存分析指标
+            # Calculate survival analysis metrics
             from lifelines.utils import concordance_index
             c_index = concordance_index(times, -risk_scores, events)
             
-            logger.info(f"📊 测试集C-index：{c_index:.4f}")
+            logger.info(f"📊 Test set C-index: {c_index:.4f}")
             
-            # 保存预测结果到Model容器
+            # Save prediction results to Model container
             prediction_results = {
                 'times': times,
                 'events': events,
@@ -1102,22 +1080,22 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
             }
 
         elif task_type == 'regression':
-            # 回归任务处理
+            # Regression task handling
             predictions = outputs.cpu().numpy().flatten()
             
-            # 计算回归评估指标
+            # Calculate regression evaluation metrics
             mse = mean_squared_error(y_test, predictions)
             mae = mean_absolute_error(y_test, predictions)
             r2 = r2_score(y_test, predictions)
             rmse = np.sqrt(mse)
             
-            logger.info(f"📊 测试集回归指标：")
+            logger.info(f"📊 Test set regression metrics:")
             logger.info(f"  MSE: {mse:.4f}")
             logger.info(f"  MAE: {mae:.4f}")
             logger.info(f"  R²: {r2:.4f}")
             logger.info(f"  RMSE: {rmse:.4f}")
             
-            # 保存预测结果到Model容器
+            # Save prediction results to Model container
             prediction_results = {
                 'y_test': y_test,
                 'predictions': predictions,
@@ -1130,7 +1108,7 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
             }
 
         else:
-            # 其他任务类型
+            # Other task types
             predictions = outputs.cpu().numpy()
             prediction_results = {
                 'y_test': y_test,
@@ -1139,15 +1117,15 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
                 'task_type': task_type
             }
 
-        # 保存到nadata的Model容器
+        # Save to nadata's Model container
         nadata.Model.add_metadata('prediction_results', prediction_results)
 
-        logger.info(f"✅ 模型预测完成，结果已保存到nadata.Model")
+        logger.info(f"✅ Model prediction completed, results saved to nadata.Model")
 
         return prediction_results
 
     except Exception as e:
-        logger.error(f"❌ 模型预测失败: {e}")
+        logger.error(f"❌ Model prediction failed: {e}")
         return {
             'y_test': None,
             'y_pred': None,

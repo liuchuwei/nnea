@@ -1,0 +1,58 @@
+# LinearSVM model configuration file
+# Global configuration
+[global]
+    model = "linear_svm"
+    device = "auto"  # Auto-detect GPU/CPU
+    seed = 42
+    inputfl = "./datasets/tumor_imm/melanoma_immunotherapy.pkl"
+    outputfl = "melanoma_imm_LinearSVM.pkl"
+    outdir = "experiment/melanoma_imm_LinearSVM"
+
+# Dataset configuration
+[dataset]
+    test_size = 0.2
+    val_size = 0.2
+    random_state = 42
+
+# LinearSVM model configuration
+[linear_svm]
+    # Basic parameters
+    C = [0.01, 0.10, 1.0, 10.0, 100.0]  # Regularization parameter
+    kernel = ["linear"]  # Linear kernel function
+    loss = ["hinge", "squared_hinge"]  # Loss function
+
+    # Other optional parameters
+    random_state = 42  # Random seed
+    class_weight = "balanced"  # Class weight
+    max_iter = 1000  # Maximum iterations
+
+    # Cross-validation configuration
+    cv_folds = 5  # Cross-validation folds
+    cv_scoring = "roc_auc"  # Evaluation metric
+    n_jobs = 8  # Number of parallel jobs
+
+    # Feature selection configuration - Linear SVM can handle more features
+    feature_selection = true
+    selection_method = "lasso"
+    n_features = 30  # Linear SVM can handle more features
+    selection_alpha = 0.01
+
+    # Data preprocessing configuration - Linear SVM is sensitive to feature scale, must standardize
+    [linear_svm.preprocessing]
+        fill_na = true
+        fill_method = "mean"
+        scale_data = true  # Linear SVM must be standardized
+        scale_method = "standard"
+
+# Training configuration
+[training]
+    verbose = 1
+    save_model = true
+    save_format = "pickle"
+    save_data = true
+
+# Evaluation configuration
+[evaluation]
+    metrics = ["roc_auc", "classification_report"]
+    save_predictions = true
+    save_probabilities = true

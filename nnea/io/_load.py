@@ -6,50 +6,50 @@ import toml
 from typing import Optional, Union, Dict, Any, List
 from ._nadata import nadata
 
-# 获取logger
+# Get logger
 logger = logging.getLogger(__name__)
 
 
 def CreateNNEA(config: str) -> nadata:
     """
-    从不同格式的文件或文件夹中读取数据，并储存到nadata类
+    Read data from files or folders in different formats and store in nadata class
     
     Parameters:
     -----------
     config : str
-        配置文件路径
+        Configuration file path
         
     Returns:
     --------
     nadata
-        包含数据的nadata对象
+        nadata object containing data
     """
-    # 加载配置
+    # Load configuration
     config_dict = load_config(config)
     
-    # 创建nadata对象
+    # Create nadata object
     nadata_obj = nadata()
     
-    # 将配置保存到Model容器
+    # Save configuration to Model container
     nadata_obj.Model.set_config(config_dict)
     
-    # 根据配置加载数据
+    # Load data according to configuration
     if 'dataset' in config_dict:
         dataset_config = config_dict['dataset']
         if 'path' in dataset_config:
             data_path = dataset_config['path']
             
-            # 检查路径类型
+            # Check path type
             if os.path.isdir(data_path):
-                # 文件夹模式
+                # Folder mode
                 nadata_obj = _load_from_folder(data_path, nadata_obj, dataset_config)
             elif os.path.isfile(data_path):
-                # 单文件模式
+                # Single file mode
                 nadata_obj = _load_from_file(data_path, nadata_obj)
             else:
                 raise ValueError(f"Data path does not exist: {data_path}")
     
-    # 加载先验知识
+    # Load prior knowledge
     if 'nnea' in config_dict and 'piror_knowledge' in config_dict['nnea']:
         prior_config = config_dict['nnea']['piror_knowledge']
         if config_dict['nnea'].get('use_piror_knowldege', False):
@@ -62,17 +62,17 @@ def CreateNNEA(config: str) -> nadata:
 
 def load_project(model_path: str) -> nadata:
     """
-    从保存的模型文件中加载项目
+    Load project from saved model file
     
     Parameters:
     -----------
     model_path : str
-        模型文件路径
+        Model file path
         
     Returns:
     --------
     nadata
-        包含训练好的模型和数据的nadata对象
+        nadata object containing trained model and data
     """
     import torch
     

@@ -11,204 +11,207 @@ from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_sco
 
 class NNEAClassifier(BaseModel):
     """
-    NNEA分类器
-    实现可解释的分类模型，以TrainableGeneSetLayer为核心
+    NNEA Classifier
+    Implements an interpretable classification model with TrainableGeneSetLayer as the core
     """
     
     def __init__(self, config: Dict[str, Any]):
         """
-        初始化NNEA分类器
+        Initialize NNEA Classifier
         
         Args:
-            config: 模型配置
+            config: Model configuration
         """
         super().__init__(config)
         self.task = 'classification'
         
     def build(self, nadata) -> None:
         """
-        构建模型
+        Build model
         
         Args:
-            nadata: nadata对象
+            nadata: nadata object
         """
         if nadata is None:
-            raise ValueError("nadata对象不能为空")
+            raise ValueError("nadata object cannot be empty")
         
-        # 获取输入维度
+        # Get input dimension
         if hasattr(nadata, 'X') and nadata.X is not None:
-            input_dim = nadata.X.shape[1]  # 基因数量
+            input_dim = nadata.X.shape[1]  # Number of genes
         else:
-            raise ValueError("表达矩阵未加载")
+            raise ValueError("Expression matrix not loaded")
         
-        # 获取输出维度
+        # Get output dimension
         if hasattr(nadata, 'Meta') and nadata.Meta is not None:
             target_col = self.config.get('dataset', {}).get('target_column', 'target')
             if target_col in nadata.Meta.columns:
                 unique_classes = nadata.Meta[target_col].nunique()
-                # 对于分类任务，输出维度应该等于类别数量
+                # For classification tasks, output dimension should equal the number of classes
                 output_dim = unique_classes
             else:
-                output_dim = 2  # 默认二分类
+                output_dim = 2  # Default binary classification
         else:
             output_dim = 2
         
-        # 获取nnea配置部分
+        # Get nnea configuration section
         nnea_config = self.config.get('nnea', {})
         
-        # 处理先验知识
+        # Process prior knowledge
         piror_knowledge = None
         use_piror_knowledge = nnea_config.get('piror_knowledge', {}).get('use_piror_knowledge', False)
         if use_piror_knowledge:
-            # 获取基因名称列表
+            # Get gene name list
             gene_names = None
             if hasattr(nadata, 'Var') and nadata.Var is not None:
                 gene_names = nadata.Var['Gene'].tolist()
                 
             if gene_names is not None:
-                # 从nnea.io模块导入先验知识加载函数
+                # Import prior knowledge loading function from nnea.io module
                 from nnea.io._load import load_piror_knowledge
                 piror_knowledge = load_piror_knowledge(self.config, gene_names)
                 
                 if piror_knowledge is not None:
-                    self.logger.info(f"成功加载先验知识，形状: {piror_knowledge.shape}")
+                    self.logger.info(f"Successfully loaded prior knowledge, shape: {piror_knowledge.shape}")
                     piror_knowledge = torch.tensor(piror_knowledge, dtype=torch.float32)
-                    # 确保先验知识矩阵与输入维度匹配
+                    # Ensure prior knowledge matrix matches input dimension
                     if piror_knowledge.shape[1] != input_dim:
-                        self.logger.warning(f"先验知识矩阵维度 ({piror_knowledge.shape[1]}) 与输入维度 ({input_dim}) 不匹配")
-                        # 如果维度不匹配，创建随机矩阵作为备用
+                        self.logger.warning(f"Prior knowledge matrix dimension ({piror_knowledge.shape[1]}) does not match input dimension ({input_dim})")
+                        # If dimensions don't match, create random matrix as backup
                         num_genesets = piror_knowledge.shape[0]
                         piror_knowledge = np.random.rand(num_genesets, input_dim)
                         piror_knowledge = (piror_knowledge > 0.8).astype(np.float32)
                 else:
-                    self.logger.warning("先验知识加载失败，使用随机矩阵")
+                    self.logger.warning("Prior knowledge loading failed, using random matrix")
                     num_genesets = nnea_config.get('geneset_layer', {}).get('num_genesets', 20)
                     piror_knowledge = np.random.rand(num_genesets, input_dim)
                     piror_knowledge = (piror_knowledge > 0.8).astype(np.float32)
             else:
-                self.logger.warning("无法获取基因名称列表，使用随机矩阵")
+                self.logger.warning("Cannot get gene name list, using random matrix")
                 num_genesets = nnea_config.get('geneset_layer', {}).get('num_genesets', 20)
                 piror_knowledge = np.random.rand(num_genesets, input_dim)
                 piror_knowledge = (piror_knowledge > 0.8).astype(np.float32)
         
-        # 处理explain_knowledge配置
+        # Process explain_knowledge configuration
         explain_knowledge_path = self.config.get('explain', {}).get('explain_knowledge')
         if explain_knowledge_path:
-            # 确保nadata有uns属性
+            # Ensure nadata has uns attribute
             if not hasattr(nadata, 'uns'):
                 nadata.uns = {}
             
-            # 保存explain_knowledge路径到nadata的uns字典中
+            # Save explain_knowledge path to nadata's uns dictionary
             nadata.uns['explain_knowledge_path'] = explain_knowledge_path
-            self.logger.info(f"已保存explain_knowledge路径到nadata.uns: {explain_knowledge_path}")
+            self.logger.info(f"Saved explain_knowledge path to nadata.uns: {explain_knowledge_path}")
         
-        # 更新配置
+        # Update configuration
         self.config['input_dim'] = input_dim
         self.config['output_dim'] = output_dim
-        self.config['device'] = str(self.device)  # 确保设备配置正确传递
+        self.config['device'] = str(self.device)  # Ensure device configuration is correctly passed
         
-        # 更新nnea配置中的先验知识
+        # Update prior knowledge in nnea configuration
         if 'nnea' not in self.config:
             self.config['nnea'] = {}
         if 'piror_knowledge' not in self.config['nnea']:
             self.config['nnea']['piror_knowledge'] = {}
         self.config['nnea']['piror_knowledge']['piror_knowledge'] = piror_knowledge
         
-        # 创建模型
+        # Create model
         self.model = NNEAModel(self.config)
         self.model.to(self.device)
         
-        # 确保所有模型组件都在正确的设备上
+        # Ensure all model components are on the correct device
         if hasattr(self.model, 'geneset_layer'):
             self.model.geneset_layer.to(self.device)
 
-        self.logger.info(f"NNEA分类器已构建: 输入维度={input_dim}, 输出维度={output_dim}")
+        self.logger.info(f"NNEA Classifier built: input_dim={input_dim}, output_dim={output_dim}")
         num_genesets = nnea_config.get('geneset_layer', {}).get('num_genesets', 20)
-        self.logger.info(f"基因集数量: {num_genesets}")
-        self.logger.info(f"使用先验知识: {use_piror_knowledge}")
-        
+        self.logger.info(f"Number of genesets: {num_genesets}")
+        self.logger.info(f"Using prior knowledge: {use_piror_knowledge}")
+
+        self.assist_config = self.config.get('nnea', {}).get('assist_layer', {})
+        self.assist_type = self.assist_config.get('type', "rec")
+
     def train(self, nadata, verbose: int = 1, max_epochs: Optional[int] = None, continue_training: bool = False, **kwargs) -> Dict[str, Any]:
         """
-        训练模型
+        Train model
         
         Args:
-            nadata: nadata对象
-            verbose: 详细程度
-                0=只显示进度条
-                1=显示训练损失、训练正则化损失、验证损失、验证正则化损失
-                2=在verbose=1基础上增加显示F1、AUC、Recall、Precision等评估指标
-            max_epochs: 最大训练轮数，如果为None则使用配置中的epochs
-            continue_training: 是否继续训练（用于tailor策略）
-            **kwargs: 额外参数
+            nadata: nadata object
+            verbose: Verbosity level
+                0=only show progress bar
+                1=show training loss, training regularization loss, validation loss, validation regularization loss
+                2=on top of verbose=1, additionally show evaluation metrics like F1, AUC, Recall, Precision
+            max_epochs: Maximum training epochs, if None use epochs from configuration
+            continue_training: Whether to continue training (for tailor strategy)
+            **kwargs: Additional parameters
             
         Returns:
-            训练结果字典
+            Training result dictionary
         """
         if self.model is None:
-            raise ValueError("模型未构建")
+            raise ValueError("Model not built")
         
-        # 设置CUDA调试环境变量
+        # Set CUDA debug environment variables
         if self.device.type == 'cuda':
             import os
             os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-            self.logger.info("已启用CUDA同步执行模式，有助于调试CUDA错误")
+            self.logger.info("Enabled CUDA synchronous execution mode, helpful for debugging CUDA errors")
         
-        # 准备数据
+        # Prepare data
         X = nadata.X
         
-        # 获取标签
+        # Get labels
         config = nadata.Model.get_config()
 
-        # 检查表型数据是否存在
+        # Check if phenotype data exists
         if not hasattr(nadata, 'Meta') or nadata.Meta is None:
-            raise ValueError(f"未找到表型数据，请检查数据加载是否正确")
+            raise ValueError(f"Phenotype data not found, please check if data loading is correct")
 
-        # 获取标签数据
+        # Get label data
         y = nadata.Meta["target"].values
         
 
-        # 获取已有的数据索引
+        # Get existing data indices
         train_indices = nadata.Model.get_indices('train')
         test_indices = nadata.Model.get_indices('test')
         
 
-        # 使用已有的train和test索引
+        # Use existing train and test indices
         train_indices = np.array(train_indices)
         test_indices = np.array(test_indices)
 
-        # 获取train索引对应的数据
+        # Get data corresponding to train indices
         X_train_full = X[train_indices]
         y_train_full = y[train_indices]
 
-        # 将train数据进一步分割为train和validation
+        # Further split train data into train and validation
         val_size = config.get('dataset', {}).get('val_size', 0.2)
         random_state = config.get('dataset', {}).get('random_state', 42)
 
-        # 从train数据中分割出validation
+        # Split validation from train data
         X_train, X_val, y_train, y_val = train_test_split(
             X_train_full, y_train_full, test_size=val_size, random_state=random_state, stratify=y_train_full
         )
 
-        # 计算新的train和validation索引
+        # Calculate new train and validation indices
         n_train_full = len(train_indices)
 
-        # 计算validation在原始train索引中的位置
+        # Calculate validation position in original train indices
         val_size_adjusted = val_size
         n_val = int(n_train_full * val_size_adjusted)
         n_train = n_train_full - n_val
 
-        # 更新索引
+        # Update indices
         train_indices_final = train_indices[:n_train]
         val_indices = train_indices[n_train:]
 
-        # 保存更新后的索引
+        # Save updated indices
         nadata.Model.set_indices(
             train_idx=train_indices_final.tolist(),
             test_idx=test_indices.tolist(),
             val_idx=val_indices.tolist()
         )
 
-        # 训练参数
+        # Training parameters
         training_config = config.get('training', {})
         if max_epochs is None:
             epochs = training_config.get('epochs', 100)
@@ -218,33 +221,33 @@ class NNEAClassifier(BaseModel):
         batch_size = training_config.get('batch_size', 32)
         reg_weight = training_config.get('regularization_weight', 0.1)
         
-        # 转换为张量并构建TensorDataset
+        # Convert to tensors and build TensorDataset
         X_train_tensor = torch.FloatTensor(X_train)
-        y_train_tensor = torch.LongTensor(y_train)  # 修改为LongTensor
+        y_train_tensor = torch.LongTensor(y_train)  # Changed to LongTensor
         
-        # 构建训练数据集
+        # Build training dataset
         train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
         
-        # 添加调试信息
-        self.logger.info(f"训练数据形状: X_train={X_train_tensor.shape}, y_train={y_train_tensor.shape}")
-        self.logger.info(f"训练标签值范围: {y_train_tensor.min().item()} - {y_train_tensor.max().item()}")
-        self.logger.info(f"模型输出维度: {self.model.output_dim}")
+        # Add debug information
+        self.logger.info(f"Training data shape: X_train={X_train_tensor.shape}, y_train={y_train_tensor.shape}")
+        self.logger.info(f"Training label value range: {y_train_tensor.min().item()} - {y_train_tensor.max().item()}")
+        self.logger.info(f"Model output dimension: {self.model.output_dim}")
         
-        # 构建验证数据集（如果有验证数据）
+        # Build validation dataset (if validation data exists)
         val_dataset = None
         if X_val is not None and y_val is not None:
             X_val_tensor = torch.FloatTensor(X_val)
-            y_val_tensor = torch.LongTensor(y_val)  # 修改为LongTensor
+            y_val_tensor = torch.LongTensor(y_val)  # Changed to LongTensor
             val_dataset = torch.utils.data.TensorDataset(X_val_tensor, y_val_tensor)
-            self.logger.info(f"验证数据形状: X_val={X_val_tensor.shape}, y_val={y_val_tensor.shape}")
-            self.logger.info(f"验证标签值范围: {y_val_tensor.min().item()} - {y_val_tensor.max().item()}")
+            self.logger.info(f"Validation data shape: X_val={X_val_tensor.shape}, y_val={y_val_tensor.shape}")
+            self.logger.info(f"Validation label value range: {y_val_tensor.min().item()} - {y_val_tensor.max().item()}")
         
-        # 创建数据加载器
+        # Create data loaders
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=0  # 设置为0避免多进程问题
+            num_workers=0  # Set to 0 to avoid multiprocessing issues
         )
         
         val_loader = None
@@ -253,103 +256,103 @@ class NNEAClassifier(BaseModel):
                 val_dataset,
                 batch_size=batch_size,
                 shuffle=False,
-                num_workers=0  # 设置为0避免多进程问题
+                num_workers=0  # Set to 0 to avoid multiprocessing issues
             )
         
-        # 计算类别权重
+        # Calculate class weights
         class_counts = torch.bincount(y_train_tensor)
         total_samples = y_train_tensor.size(0)
         num_classes = class_counts.size(0)
         
-        # 确保所有类别都有样本，避免除零错误
+        # Ensure all classes have samples, avoid division by zero
         if num_classes > 0 and torch.min(class_counts) > 0:
             class_weights = total_samples / (num_classes * class_counts.float())
         else:
-            # 如果某些类别没有样本，使用均匀权重
+            # If some classes have no samples, use uniform weights
             class_weights = torch.ones(num_classes, dtype=torch.float32)
         
         class_weights = class_weights.to(self.device)
         
-        # 安全检查：确保标签值不会超出模型输出维度
+        # Safety check: ensure label values do not exceed model output dimension
         max_label = y_train_tensor.max().item()
         model_output_dim = self.model.output_dim
         if max_label >= model_output_dim:
-            raise ValueError(f"标签值({max_label})超出了模型输出维度({model_output_dim})，请检查数据预处理")
+            raise ValueError(f"Label value ({max_label}) exceeds model output dimension ({model_output_dim}), please check data preprocessing")
         
-        # 优化器和损失函数
+        # Optimizer and loss function
         optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
-        criterion = nn.NLLLoss(weight=class_weights)  # 修改为NLLLoss
+        criterion = nn.NLLLoss(weight=class_weights)  # Changed to NLLLoss
         
-        # 模型初始化阶段 - 训练TrainableGeneSetLayer的indicator
+        # Model initialization phase - train indicator of TrainableGeneSetLayer
         if not continue_training:
-            self.logger.info("🔧 开始模型初始化阶段 - 训练基因集层指示矩阵...")
+            self.logger.info("🔧 Starting model initialization phase - training geneset layer indicator...")
             
-            # 根据配置决定是否在初始化阶段启用assist_layer
+            # Decide whether to enable assist_layer in the initialization phase
             if self.model.use_assist_in_init:
                 self.model.set_assist_layer_mode(True)
-                self.logger.info("📊 初始化阶段：启用辅助层，直接映射geneset输出为概率")
+                self.logger.info("📊 Initialization phase: Enabled assist layer, directly map geneset output to probability")
             else:
                 self.model.set_assist_layer_mode(False)
-                self.logger.info("📊 初始化阶段：使用标准模式，使用focus_layer进行预测")
+                self.logger.info("📊 Initialization phase: Using standard mode, use focus_layer for prediction")
             
             init_results = self._initialize_geneset_layer(train_loader, optimizer, verbose)
-            self.logger.info(f"✅ 模型初始化完成: {init_results}")
+            self.logger.info(f"✅ Model initialization complete: {init_results}")
             
-            # 初始化完成后，切换到标准模式（使用focus_layer）
+            # After initialization, switch to standard mode (using focus_layer)
             self.model.set_assist_layer_mode(False)
-            self.logger.info("🔄 初始化完成：切换到标准模式，使用focus_layer进行预测")
+            self.logger.info("🔄 Initialization complete: Switching to standard mode, using focus_layer for prediction")
             
-            # 将初始化结果保存到nadata.uns中
+            # Save initialization results to nadata.uns
             if not hasattr(nadata, 'uns'):
                 nadata.uns = {}
             nadata.uns['init_results'] = init_results
-            self.logger.info("💾 初始化结果已保存到nadata.uns中")
+            self.logger.info("💾 Initialization results saved to nadata.uns")
         else:
-            # 继续训练时，确保使用标准模式
+            # During continued training, ensure standard mode is used
             self.model.set_assist_layer_mode(False)
-            self.logger.info("🔄 继续训练：使用标准模式，使用focus_layer进行预测")
+            self.logger.info("🔄 Continuing training: Using standard mode, using focus_layer for prediction")
         
-        # 早停机制参数
+        # Early stopping parameters
         patience = training_config.get('patience', 10)
-        min_delta = 1e-6  # 最小改善阈值
+        min_delta = 1e-6  # Minimum improvement threshold
         
-        # 早停变量初始化
+        # Initialize early stopping variables
         best_val_loss = float('inf')
         patience_counter = 0
         early_stopped = False
         
-        # 添加checkpoint保存相关变量
+        # Add checkpoint saving related variables
         best_model_state = None
         best_epoch = 0
         outdir = config.get('global', {}).get('outdir', 'experiment/test')
         
-        # 训练循环
+        # Training loop
         train_losses = {'loss': [], 'reg_loss': []}
         val_losses = {'loss': [], 'reg_loss': []}
         
         if verbose >= 1:
             if continue_training:
-                self.logger.info(f"继续训练NNEA模型... (剩余{epochs}个epoch)")
+                self.logger.info(f"Continuing training NNEA model... (remaining {epochs} epochs)")
             else:
-                self.logger.info("开始正式训练NNEA模型...")
-            self.logger.info(f"早停配置: patience={patience}, min_delta={min_delta}")
-            self.logger.info(f"Checkpoint保存目录: {outdir}")
+                self.logger.info("Starting formal training NNEA model...")
+            self.logger.info(f"Early stopping configuration: patience={patience}, min_delta={min_delta}")
+            self.logger.info(f"Checkpoint saving directory: {outdir}")
         
-        # 导入tqdm用于进度条
+        # Import tqdm for progress bar
         try:
             from tqdm import tqdm
             use_tqdm = True
         except ImportError:
             use_tqdm = False
         
-        # 创建进度条（只有verbose=0时显示）
+        # Create progress bar (only shown when verbose=0)
         if verbose == 0 and use_tqdm:
-            pbar = tqdm(range(epochs), desc="训练进度")
+            pbar = tqdm(range(epochs), desc="Training progress")
         else:
             pbar = range(epochs)
         
         for epoch in pbar:
-            # 训练模式
+            # Training mode
             self.model.train()
             epoch_loss = 0.0
             epoch_reg_loss = 0.0
@@ -357,38 +360,38 @@ class NNEAClassifier(BaseModel):
             train_predictions = []
             train_targets = []
             
-            # 使用数据加载器进行批处理训练
+            # Use data loader for batch training
             for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
-                # 将数据移动到设备
+                # Move data to device
                 batch_X = batch_X.to(self.device)
                 batch_y = batch_y.to(self.device)
                 
                 optimizer.zero_grad()
                 
                 try:
-                    # 前向传播
+                    # Forward pass
                     outputs = self.model(batch_X)
                     
-                    # 检查输出是否包含NaN或无穷大
+                    # Check if outputs contain NaN or inf
                     if torch.isnan(outputs).any() or torch.isinf(outputs).any():
-                        self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: 模型输出包含NaN或无穷大值")
+                        self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: Model outputs contain NaN or inf values")
                         continue
                     
                     loss = criterion(outputs, batch_y)
                     
-                    # 检查损失值是否有效
+                    # Check if loss value is valid
                     if torch.isnan(loss) or torch.isinf(loss):
-                        self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: 损失值为NaN或无穷大")
+                        self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: Loss value is NaN or inf")
                         continue
                     
-                    # 添加正则化损失
+                    # Add regularization loss
                     reg_loss = self.model.regularization_loss()
                     total_loss = loss + reg_weight * reg_loss
                     
-                    # 反向传播
+                    # Backward pass
                     total_loss.backward()
                     
-                    # 梯度裁剪
+                    # Gradient clipping
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     
                     optimizer.step()
@@ -397,7 +400,7 @@ class NNEAClassifier(BaseModel):
                     epoch_reg_loss += reg_loss.item()
                     num_batches += 1
                     
-                    # 收集训练预测结果用于计算指标
+                    # Collect training predictions for metric calculation
                     if verbose >= 2:
                         predictions = outputs.cpu().detach().numpy()
                         targets = batch_y.cpu().detach().numpy()
@@ -405,34 +408,34 @@ class NNEAClassifier(BaseModel):
                         train_targets.append(targets)
                     
                 except Exception as e:
-                    self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: 训练过程中出现错误: {e}")
+                    self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: Error during training: {e}")
                     continue
             
-            # 计算平均损失
+            # Calculate average loss
             if num_batches > 0:
                 avg_loss = epoch_loss / num_batches
                 avg_reg_loss = epoch_reg_loss / num_batches
                 train_losses['loss'].append(avg_loss)
                 train_losses['reg_loss'].append(avg_reg_loss)
                 
-                # verbose=1时显示训练损失
+                # Show training loss when verbose=1
                 if verbose >= 1:
                     self.logger.info(f"Epoch {epoch}: Train Loss={avg_loss:.4f}, Train Reg_Loss={avg_reg_loss:.4f}")
                 
-                # verbose=2时计算并显示训练集评估指标
+                # Calculate and show training set evaluation metrics when verbose=2
                 if verbose >= 2 and train_predictions and train_targets:
-                    # 合并所有批次的预测结果
+                    # Concatenate predictions from all batches
                     all_train_predictions = np.vstack(train_predictions)
                     all_train_targets = np.concatenate(train_targets)
                     
-                    # 计算训练集评估指标
+                    # Calculate training set evaluation metrics
                     train_metrics = self._calculate_validation_metrics(all_train_predictions, all_train_targets)
                     
-                    # 显示训练集评估指标
+                    # Show training set evaluation metrics
                     train_metrics_info = f"Epoch {epoch} Train Metrics: AUC={train_metrics['auc']:.4f}, F1={train_metrics['f1']:.4f}, Recall={train_metrics['recall']:.4f}, Precision={train_metrics['precision']:.4f}"
                     self.logger.info(train_metrics_info)
             
-            # 验证阶段
+            # Validation phase
             if val_loader is not None:
                 self.model.eval()
                 val_loss = 0.0
@@ -455,7 +458,7 @@ class NNEAClassifier(BaseModel):
                             val_reg_loss += reg_loss.item()
                             val_num_batches += 1
                             
-                            # 收集预测结果用于计算指标
+                            # Collect predictions for metric calculation
                             if verbose >= 2:
                                 predictions = outputs.cpu().detach().numpy()
                                 targets = batch_y.cpu().detach().numpy()
@@ -463,7 +466,7 @@ class NNEAClassifier(BaseModel):
                                 val_targets.append(targets)
                             
                         except Exception as e:
-                            self.logger.error(f"验证过程中出现错误: {e}")
+                            self.logger.error(f"Error during validation: {e}")
                             continue
                 
                 if val_num_batches > 0:
@@ -472,35 +475,35 @@ class NNEAClassifier(BaseModel):
                     val_losses['loss'].append(avg_val_loss)
                     val_losses['reg_loss'].append(avg_val_reg_loss)
                     
-                    # verbose=1时显示验证损失
+                    # Show validation loss when verbose=1
                     if verbose >= 1:
                         self.logger.info(f"Epoch {epoch} Validation: Val Loss={avg_val_loss:.4f}, Val Reg_Loss={avg_val_reg_loss:.4f}")
                     
-                    # verbose=2时计算并显示评估指标
+                    # Calculate and show evaluation metrics when verbose=2
                     if verbose >= 2 and val_predictions and val_targets:
-                        # 合并所有批次的预测结果
+                        # Concatenate predictions from all batches
                         all_predictions = np.vstack(val_predictions)
                         all_targets = np.concatenate(val_targets)
                         
-                        # 计算评估指标
+                        # Calculate evaluation metrics
                         val_metrics = self._calculate_validation_metrics(all_predictions, all_targets)
                         
-                        # 显示评估指标
+                        # Show evaluation metrics
                         metrics_info = f"Epoch {epoch} Vak Metrics: AUC={val_metrics['auc']:.4f}, F1={val_metrics['f1']:.4f}, Recall={val_metrics['recall']:.4f}, Precision={val_metrics['precision']:.4f}"
                         self.logger.info(metrics_info)
                 
-                # 早停检查和checkpoint保存
+                # Early stopping check and checkpoint saving
                 if val_loader is not None and avg_val_loss is not None:
-                    # 检查验证损失是否改善
+                    # Check if validation loss improved
                     if avg_val_loss < best_val_loss - min_delta:
                         best_val_loss = avg_val_loss
                         best_epoch = epoch
                         patience_counter = 0
                         
-                        # 保存最佳模型状态
+                        # Save best model state
                         best_model_state = self.model.state_dict().copy()
                         
-                        # 保存checkpoint
+                        # Save checkpoint
                         checkpoint_path = os.path.join(outdir, f"checkpoint_epoch_{epoch}.pth")
                         try:
                             torch.save({
@@ -513,45 +516,45 @@ class NNEAClassifier(BaseModel):
                                 'val_reg_loss': avg_val_reg_loss
                             }, checkpoint_path)
                             if verbose >= 1:
-                                self.logger.info(f"✅ Epoch {epoch}: 验证损失改善到 {best_val_loss:.4f}")
-                                self.logger.info(f"💾 Checkpoint已保存到: {checkpoint_path}")
+                                self.logger.info(f"✅ Epoch {epoch}: Validation loss improved to {best_val_loss:.4f}")
+                                self.logger.info(f"💾 Checkpoint saved to: {checkpoint_path}")
                         except Exception as e:
-                            self.logger.error(f"保存checkpoint失败: {e}")
+                            self.logger.error(f"Failed to save checkpoint: {e}")
                     else:
                         patience_counter += 1
                         if verbose >= 1:
-                            self.logger.info(f"⚠️ Epoch {epoch}: 验证损失未改善，patience_counter={patience_counter}/{patience}")
+                            self.logger.info(f"⚠️ Epoch {epoch}: Validation loss did not improve, patience_counter={patience_counter}/{patience}")
                     
-                    # 检查是否触发早停
+                    # Check if early stopping triggered
                     if patience_counter >= patience:
                         early_stopped = True
-                        self.logger.info(f"🛑 Epoch {epoch}: 触发早停！验证损失在{patience}个epoch内未改善")
-                        self.logger.info(f"   最佳验证损失: {best_val_loss:.4f} (Epoch {best_epoch})")
+                        self.logger.info(f"🛑 Epoch {epoch}: Early stopping triggered! Validation loss did not improve for {patience} epochs")
+                        self.logger.info(f"    Best validation loss: {best_val_loss:.4f} (Epoch {best_epoch})")
                         break
         
-        # 训练完成，恢复最佳模型
+        # Training complete, restore best model
         if best_model_state is not None:
             self.model.load_state_dict(best_model_state)
-            self.logger.info(f"🔄 已恢复最佳模型 (Epoch {best_epoch}, Val Loss: {best_val_loss:.4f})")
+            self.logger.info(f"🔄 Best model restored (Epoch {best_epoch}, Val Loss: {best_val_loss:.4f})")
             
-            # 保存最终的最佳模型
+            # Save final best model
             final_best_model_path = os.path.join(outdir, "best_model_final.pth")
             try:
                 torch.save(best_model_state, final_best_model_path)
-                self.logger.info(f"💾 最终最佳模型已保存到: {final_best_model_path}")
+                self.logger.info(f"💾 Final best model saved to: {final_best_model_path}")
             except Exception as e:
-                self.logger.error(f"保存最终最佳模型失败: {e}")
+                self.logger.error(f"Failed to save final best model: {e}")
         
-        # 训练完成
+        # Training complete
         self.is_trained = True
         
-        # 记录早停信息
+        # Log early stopping information
         if early_stopped:
-            self.logger.info(f"📊 训练因早停而结束，实际训练了{epoch+1}个epoch")
+            self.logger.info(f"📊 Training ended due to early stopping, trained for {epoch+1} epochs")
         else:
-            self.logger.info(f"📊 训练完成，共训练了{epochs}个epoch")
+            self.logger.info(f"📊 Training complete, trained for {epochs} epochs")
         
-        # 返回训练结果
+        # Return training results
         results = {
             'train_losses': train_losses,
             'val_losses': val_losses,
@@ -564,10 +567,10 @@ class NNEAClassifier(BaseModel):
             'patience_used': patience_counter if early_stopped else 0
         }
         
-        # 将初始化结果也包含在返回结果中
+        # Include initialization results in return results
         if not continue_training and 'init_results' in locals():
             results['init_results'] = init_results
-            # 同时保存到nadata.uns中（如果还没有保存的话）
+            # Also save to nadata.uns (if not already saved)
             if not hasattr(nadata, 'uns'):
                 nadata.uns = {}
             if 'init_results' not in nadata.uns:
@@ -577,19 +580,19 @@ class NNEAClassifier(BaseModel):
 
     def _calculate_validation_metrics(self, predictions: np.ndarray, targets: np.ndarray) -> Dict[str, float]:
         """
-        计算验证集的评估指标
+        Calculate validation metrics
         
         Args:
-            predictions: 模型预测结果 (N, num_classes)
-            targets: 真实标签 (N,)
+            predictions: Model predictions (N, num_classes)
+            targets: True labels (N,)
             
         Returns:
-            评估指标字典
+            Dictionary of evaluation metrics
         """
         try:
             if predictions.shape[1] == 2:
-                # 二分类（softmax/log_softmax输出，shape为[N, 2]）
-                # 取正类概率（假设正类为类别1）
+                # Binary classification (softmax/log_softmax output, shape [N, 2])
+                # Take positive class probability (assuming positive class is class 1)
                 y_prob = predictions[:, 1]
                 y_pred_binary = np.argmax(predictions, axis=1)
                 auc = roc_auc_score(targets, y_prob)
@@ -597,7 +600,7 @@ class NNEAClassifier(BaseModel):
                 precision = precision_score(targets, y_pred_binary)
                 recall = recall_score(targets, y_pred_binary)
             else:
-                # 多分类
+                # Multi-class
                 y_pred_binary = np.argmax(predictions, axis=1)
                 auc = roc_auc_score(targets, predictions, multi_class='ovr')
                 f1 = f1_score(targets, y_pred_binary, average='weighted')
@@ -611,7 +614,7 @@ class NNEAClassifier(BaseModel):
                 'recall': recall
             }
         except Exception as e:
-            self.logger.error(f"计算验证指标时出现错误: {e}")
+            self.logger.error(f"Error calculating validation metrics: {e}")
             return {
                 'auc': 0.0,
                 'f1': 0.0,
@@ -621,51 +624,51 @@ class NNEAClassifier(BaseModel):
 
     def _initialize_geneset_layer(self, train_loader, optimizer, verbose: int = 1) -> Dict[str, Any]:
         """
-        初始化基因集层 - 训练indicator直到满足条件
+        Initialize geneset layer - train indicator until condition is met
         
         Args:
-            train_loader: 训练数据加载器
-            optimizer: 优化器
-            verbose: 详细程度
+            train_loader: Training data loader
+            optimizer: Optimizer
+            verbose: Verbosity level
             
         Returns:
-            初始化结果字典
+            Dictionary of initialization results
         """
-        self.logger.info("🔧 开始基因集层初始化...")
+        self.logger.info("🔧 Starting geneset layer initialization...")
         
-        # 确认当前使用assist_layer模式
+        # Confirm current assist_layer mode
         if self.model.get_assist_layer_mode():
-            self.logger.info("📊 初始化阶段：使用辅助层直接映射geneset输出为概率")
+            self.logger.info("📊 Initialization phase: Using assist layer, directly map geneset output to probability")
         else:
-            self.logger.warning("⚠️ 初始化阶段：未使用辅助层，建议在初始化阶段启用assist_layer")
+            self.logger.warning("⚠️ Initialization phase: Assist layer not used, it is recommended to enable assist_layer in the initialization phase")
         
-        # 获取基因集层配置
+        # Get geneset layer configuration
         config = self.config.get('nnea', {}).get('geneset_layer', {})
         geneset_threshold = config.get('geneset_threshold', 1e-5)
         max_set_size = config.get('max_set_size', 50)
         init_max_epochs = config.get('init_max_epochs', 100)
         init_patience = config.get('init_patience', 10)
         
-        # 获取初始化阶段的损失权重配置
+        # Get initialization phase loss weight configuration
         init_task_loss_weight = config.get('init_task_loss_weight', 1.0)
         init_reg_loss_weight = config.get('init_reg_loss_weight', 10.0)
         init_total_loss_weight = config.get('init_total_loss_weight', 1.0)
         
-        self.logger.info(f"初始化参数: geneset_threshold={geneset_threshold}, max_set_size={max_set_size}")
-        self.logger.info(f"初始化损失权重: task_loss_weight={init_task_loss_weight}, reg_loss_weight={init_reg_loss_weight}, total_loss_weight={init_total_loss_weight}")
+        self.logger.info(f"Initialization parameters: geneset_threshold={geneset_threshold}, max_set_size={max_set_size}")
+        self.logger.info(f"Initialization loss weights: task_loss_weight={init_task_loss_weight}, reg_loss_weight={init_reg_loss_weight}, total_loss_weight={init_total_loss_weight}")
         
-        # 初始化变量
+        # Initialize variables
         best_condition_count = float('inf')
         patience_counter = 0
         init_epochs = 0
         
-        # 初始化训练循环
+        # Initialize training loop
         for epoch in range(init_max_epochs):
             self.model.train()
             epoch_loss = 0.0
             num_batches = 0
             
-            # 训练一个epoch
+            # Train one epoch
             for batch_X, batch_y in train_loader:
                 batch_X = batch_X.to(self.device)
                 batch_y = batch_y.to(self.device)
@@ -673,23 +676,26 @@ class NNEAClassifier(BaseModel):
                 optimizer.zero_grad()
                 
                 try:
-                    # 前向传播
+                    # Forward pass
                     outputs = self.model(batch_X)
                     
-                    # 计算任务损失（分类损失）
-                    task_loss = self._calculate_task_loss(outputs, batch_y)
-                    
-                    # 计算正则化损失
+                    # Calculate task loss (classification loss)
+                    if self.assist_type == "classification":
+                        task_loss = self._calculate_task_loss(outputs, batch_y)
+                    elif self.assist_type == "rec":
+                        task_loss = self._calculate_task_loss(outputs, batch_X)
+
+                    # Calculate regularization loss
                     reg_loss = self.model.regularization_loss()
                     
-                    # 计算总损失（使用配置的权重）
+                    # Calculate total loss (using configured weights)
                     total_loss = (init_task_loss_weight * task_loss + 
                                 init_reg_loss_weight * reg_loss) * init_total_loss_weight
                     
-                    # 反向传播
+                    # Backward pass
                     total_loss.backward()
                     
-                    # 梯度裁剪
+                    # Gradient clipping
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     
                     optimizer.step()
@@ -698,27 +704,27 @@ class NNEAClassifier(BaseModel):
                     num_batches += 1
                     
                 except Exception as e:
-                    self.logger.error(f"初始化Epoch {epoch}, Batch: 训练过程中出现错误: {e}")
+                    self.logger.error(f"Initialization Epoch {epoch}, Batch: Error during training: {e}")
                     continue
             
-            # 检查基因集条件
+            # Check geneset condition
             condition_met = self._check_geneset_condition(geneset_threshold, max_set_size)
             
             if condition_met:
                 init_epochs = epoch + 1
-                self.logger.info(f"✅ 基因集层初始化完成，在第{init_epochs}个epoch满足条件")
+                self.logger.info(f"✅ Geneset layer initialization complete, condition met in {init_epochs} epochs")
                 break
             
-            # 检查是否达到最大轮数
+            # Check if maximum epochs reached
             if epoch == init_max_epochs - 1:
-                self.logger.warning(f"⚠️ 达到最大初始化轮数({init_max_epochs})，强制结束初始化")
+                self.logger.warning(f"⚠️ Maximum initialization epochs ({init_max_epochs}) reached, forcing termination of initialization")
                 init_epochs = init_max_epochs
                 break
             
-            # 早停检查
+            # Early stopping check
             current_condition_count = self._count_genesets_above_threshold(geneset_threshold, max_set_size)
             total_gene_sets = self.model.geneset_layer.num_sets if hasattr(self.model, 'geneset_layer') else self.model.gene_set_layer.num_sets
-            # 只有当current_condition_count开始减少（即小于total_gene_sets）时才启动早停机制
+            # Only start early stopping mechanism when current_condition_count starts decreasing (i.e., less than total_gene_sets)
             if current_condition_count < total_gene_sets:
                 if current_condition_count < best_condition_count:
                     best_condition_count = current_condition_count
@@ -726,15 +732,15 @@ class NNEAClassifier(BaseModel):
                 else:
                     patience_counter += 1
             if patience_counter >= init_patience:
-                self.logger.info(f"⚠️ 初始化早停，连续{init_patience}个epoch未改善")
+                self.logger.info(f"⚠️ Initialization early stopping, no improvement for {init_patience} epochs")
                 init_epochs = epoch + 1
                 break
             
             if verbose >= 2 and (epoch % 20 == 0 or epoch == init_max_epochs - 1):
                 condition_count = total_gene_sets - current_condition_count
-                self.logger.info(f"初始化Epoch {epoch}: Reg Loss={epoch_loss/num_batches:.4f}, 满足条件的基因集数: {condition_count}/{total_gene_sets}")
+                self.logger.info(f"Initialization Epoch {epoch}: Reg Loss={epoch_loss/num_batches:.4f}, number of genesets satisfying condition: {condition_count}/{total_gene_sets}")
 
-        # 返回初始化结果
+        # Return initialization results
         init_results = {
             'init_epochs': init_epochs,
             'geneset_threshold': geneset_threshold,
@@ -750,67 +756,70 @@ class NNEAClassifier(BaseModel):
     
     def _calculate_task_loss(self, outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
-        计算任务损失（分类损失）
+        Calculate task loss (classification loss)
         
         Args:
-            outputs: 模型输出
-            targets: 真实标签
+            outputs: Model outputs
+            targets: True labels
             
         Returns:
-            任务损失
+            Task loss
         """
-        # 使用交叉熵损失
-        criterion = nn.CrossEntropyLoss()
+        # Use cross-entropy loss
+        if self.assist_type == 'classification':
+            criterion = nn.CrossEntropyLoss()
+        elif self.assist_type == 'rec':
+            criterion = nn.MSELoss()
         return criterion(outputs, targets)
     
     def _check_geneset_condition(self, geneset_threshold: float, max_set_size: int) -> bool:
         """
-        检查基因集条件是否满足
+        Check if geneset condition is met
         
         Args:
-            geneset_threshold: 基因集阈值
-            max_set_size: 最大基因集大小
+            geneset_threshold: Geneset threshold
+            max_set_size: Maximum geneset size
             
         Returns:
-            是否满足条件
+            Whether condition is met
         """
         try:
-            # 获取基因集层的指示矩阵
+            # Get geneset layer indicator matrix
             if hasattr(self.model, 'geneset_layer'):
                 indicators = self.model.geneset_layer.get_set_indicators()
             elif hasattr(self.model, 'gene_set_layer'):
                 indicators = self.model.gene_set_layer.get_set_indicators()
             else:
-                self.logger.warning("未找到基因集层，无法检查条件")
-                return True  # 如果没有基因集层，认为条件满足
+                self.logger.warning("Geneset layer not found, assuming condition met")
+                return True  # If no geneset layer, assume condition is met
             
-            # 检查每个基因集
+            # Check each geneset
             for i in range(indicators.shape[0]):
                 gene_assignments = indicators[i]
                 selected_count = torch.sum(gene_assignments >= geneset_threshold).item()
                 
                 if selected_count >= max_set_size:
-                    return False  # 有一个基因集超过最大大小，条件不满足
+                    return False  # One geneset exceeds max size, condition not met
             
-            return True  # 所有基因集都满足条件
+            return True  # All genesets meet condition
             
         except Exception as e:
-            self.logger.error(f"检查基因集条件时出现错误: {e}")
-            return True  # 出错时认为条件满足
+            self.logger.error(f"Error checking geneset condition: {e}")
+            return True  # Assume condition is met on error
     
     def _count_genesets_above_threshold(self, geneset_threshold: float, max_set_size: int) -> int:
         """
-        计算超过阈值的基因集数量
+        Count number of genesets above threshold
         
         Args:
-            geneset_threshold: 基因集阈值
-            max_set_size: 最大基因集大小
+            geneset_threshold: Geneset threshold
+            max_set_size: Maximum geneset size
             
         Returns:
-            超过阈值的基因集数量
+            Number of genesets above threshold
         """
         try:
-            # 获取基因集层的指示矩阵
+            # Get geneset layer indicator matrix
             if hasattr(self.model, 'geneset_layer'):
                 indicators = self.model.geneset_layer.get_set_indicators()
             elif hasattr(self.model, 'gene_set_layer'):
@@ -829,20 +838,20 @@ class NNEAClassifier(BaseModel):
             return count
             
         except Exception as e:
-            self.logger.error(f"计算基因集数量时出现错误: {e}")
+            self.logger.error(f"Error calculating number of genesets: {e}")
             return 0
     
     def save_model(self, save_path: str) -> None:
         """
-        保存模型状态
+        Save model state
         
         Args:
-            save_path: 保存路径
+            save_path: Save path
         """
         if self.model is None:
-            raise ValueError("模型未构建")
+            raise ValueError("Model not built")
         
-        # 保存模型状态字典
+        # Save model state dictionary
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'config': self.config,
@@ -850,44 +859,44 @@ class NNEAClassifier(BaseModel):
             'is_trained': self.is_trained
         }, save_path)
         
-        self.logger.info(f"模型已保存到: {save_path}")
+        self.logger.info(f"Model saved to: {save_path}")
     
     def load_model(self, load_path: str) -> None:
         """
-        加载模型状态
+        Load model state
         
         Args:
-            load_path: 加载路径
+            load_path: Load path
         """
         if not os.path.exists(load_path):
-            raise FileNotFoundError(f"模型文件不存在: {load_path}")
+            raise FileNotFoundError(f"Model file not found: {load_path}")
         
-        # 加载模型状态字典
+        # Load model state dictionary
         checkpoint = torch.load(load_path, map_location=self.device)
         
-        # 加载模型参数
+        # Load model parameters
         self.model.load_state_dict(checkpoint['model_state_dict'])
         
-        # 更新其他属性
+        # Update other attributes
         if 'config' in checkpoint:
             self.config = checkpoint['config']
         if 'is_trained' in checkpoint:
             self.is_trained = checkpoint['is_trained']
         
-        self.logger.info(f"模型已从 {load_path} 加载")
+        self.logger.info(f"Model loaded from {load_path}")
     
     def predict(self, nadata) -> np.ndarray:
         """
-        模型预测
+        Model prediction
         
         Args:
-            nadata: nadata对象
+            nadata: nadata object
             
         Returns:
-            预测结果
+            Prediction results
         """
         if not self.is_trained:
-            raise ValueError("模型未训练")
+            raise ValueError("Model not trained")
         
         self.model.eval()
         with torch.no_grad():
@@ -898,41 +907,41 @@ class NNEAClassifier(BaseModel):
     
     def evaluate(self, nadata, split='test') -> Dict[str, float]:
         """
-        模型评估
+        Model evaluation
         
         Args:
-            nadata: nadata对象
-            split: 评估的数据集分割
+            nadata: nadata object
+            split: Data split for evaluation
             
         Returns:
-            评估指标字典
+            Dictionary of evaluation metrics
         """
         if not self.is_trained:
-            raise ValueError("模型未训练")
+            raise ValueError("Model not trained")
         
-        # 获取数据索引
+        # Get data indices
         indices = nadata.Model.get_indices(split)
         if indices is None:
-            raise ValueError(f"未找到{split}集的索引")
+            raise ValueError(f"Indices for {split} split not found")
         
-        # 根据索引获取数据
-        X = nadata.X[indices] # 转置为(样本数, 基因数)
+        # Get data based on indices
+        X = nadata.X[indices] # Transpose to (num_samples, num_genes)
         
-        # 获取目标列名
+        # Get target column name
         config = nadata.Model.get_config()
         target_col = config.get('dataset', {}).get('target_column', 'target')
         y = nadata.Meta.iloc[indices][target_col].values
         
-        # 对特定数据集进行预测
+        # Predict for specific dataset
         self.model.eval()
         with torch.no_grad():
             X_tensor = torch.FloatTensor(X).to(self.device)
             predictions = self.model(X_tensor).cpu().numpy()
         
-        # 计算指标
+        # Calculate metrics
         if predictions.shape[1] == 2:
-            # 二分类（softmax/log_softmax输出，shape为[N, 2]）
-            # 取正类概率（假设正类为类别1）
+            # Binary classification (softmax/log_softmax output, shape [N, 2])
+            # Take positive class probability (assuming positive class is class 1)
             y_prob = predictions[:, 1]
             y_pred_binary = np.argmax(predictions, axis=1)
             accuracy = accuracy_score(y, y_pred_binary)
@@ -941,7 +950,7 @@ class NNEAClassifier(BaseModel):
             precision = precision_score(y, y_pred_binary)
             recall = recall_score(y, y_pred_binary)
         else:
-            # 多分类
+            # Multi-class
             y_pred_binary = np.argmax(predictions, axis=1)
             accuracy = accuracy_score(y, y_pred_binary)
             auc = roc_auc_score(y, predictions, multi_class='ovr')
@@ -956,12 +965,12 @@ class NNEAClassifier(BaseModel):
             'recall': recall
         }
         
-        # 保存评估结果到Model容器
+        # Save evaluation results to Model container
         eval_results = nadata.Model.get_metadata('evaluation_results') or {}
         eval_results[split] = results
         nadata.Model.add_metadata('evaluation_results', eval_results)
         
-        self.logger.info(f"模型评估完成 - {split}集:")
+        self.logger.info(f"Model evaluation complete - {split} split:")
         for metric, value in results.items():
             self.logger.info(f"  {metric}: {value:.4f}")
         
@@ -969,74 +978,74 @@ class NNEAClassifier(BaseModel):
     
     def explain(self, nadata, method='importance') -> Dict[str, Any]:
         """
-        模型解释
+        Model explanation
         
         Args:
-            nadata: nadata对象
-            method: 解释方法
+            nadata: nadata object
+            method: Explanation method
             
         Returns:
-            解释结果字典
+            Dictionary of explanation results
         """
         if not self.is_trained:
-            raise ValueError("模型未训练")
+            raise ValueError("Model not trained")
         
         if method == 'importance':
             try:
-                # 获取基因集分配
+                # Get geneset assignments
                 geneset_assignments = self.model.get_geneset_assignments().detach().cpu().numpy()
                 
-                # 使用DeepLIFT计算基因集重要性
+                # Use DeepLIFT to calculate geneset importance
                 geneset_importance = self._calculate_geneset_importance_with_deeplift(nadata)
                 
-                # 获取注意力权重（占位符）
+                # Get attention weights (placeholder)
                 attention_weights = self.model.get_attention_weights().detach().cpu().numpy()
                 
-                # 特征重要性使用基因集重要性作为替代
+                # Feature importance uses geneset importance as a substitute
                 feature_importance = geneset_importance
                 
-                # 计算基因重要性（基于基因集分配和重要性）
+                # Calculate gene importance (based on geneset assignments and importance)
                 gene_importance = np.zeros(self.model.input_dim, dtype=np.float32)
                 for i in range(self.model.num_genesets):
-                    # 确保维度匹配：geneset_assignments[i]是基因向量，geneset_importance[i]是标量
+                    # Ensure dimension match: geneset_assignments[i] is a gene vector, geneset_importance[i] is a scalar
                     # gene_importance += geneset_assignments[i].astype(np.float32) * float(geneset_importance[i])
                     gene_importance += geneset_assignments[i].astype(np.float32) 
             except Exception as e:
-                self.logger.warning(f"基因重要性计算失败: {e}")
-                # 使用简化的方法
+                self.logger.warning(f"Gene importance calculation failed: {e}")
+                # Use simplified method
                 gene_importance = np.random.rand(self.model.input_dim)
                 geneset_importance = np.random.rand(self.model.num_genesets)
                 attention_weights = np.random.rand(self.model.num_genesets)
                 feature_importance = geneset_importance
             
-            # 排序并获取前20个重要基因
+            # Sort and get top 20 important genes
             top_indices = np.argsort(gene_importance)[::-1][:20]
             top_genes = [nadata.Var.iloc[i]['Gene'] for i in top_indices]
             top_scores = gene_importance[top_indices]
             
-            # 打印20个top_genes
-            self.logger.info(f"  - Top 20 重要基因:")
-            self.logger.info(f"    {'排名':<4} {'基因名':<15} {'重要性分数':<12}")
+            # Print top 20 genes
+            self.logger.info(f"  - Top 20 important genes:")
+            self.logger.info(f"    {'Rank':<4} {'Gene Name':<15} {'Importance Score':<12}")
             self.logger.info(f"    {'-'*4} {'-'*15} {'-'*12}")
             for i, (gene, score) in enumerate(zip(top_genes, top_scores)):
                 self.logger.info(f"    {i+1:<4} {gene:<15} {score:<12.4f}")
             
-            # 基因集精炼和注释
+            # Gene set refinement and annotation
             genesets_annotated = {}
             
             try:
-                # 获取基因名称列表
+                # Get gene name list
                 gene_names = nadata.Var['Gene'].tolist()
                 
-                # 获取配置参数
+                # Get configuration parameters
                 nnea_config = self.config.get('nnea', {})
                 geneset_config = nnea_config.get('geneset_layer', {})
                 min_set_size = geneset_config.get('min_set_size', 10)
                 max_set_size = geneset_config.get('max_set_size', 50)
                 
-                # 精炼基因集
+                # Refine genesets
                 from nnea.utils.enrichment import refine_genesets
-                # 从模型中获取geneset_threshold参数
+                # Get geneset_threshold parameter from model
                 geneset_threshold = self.model.geneset_layer.geneset_threshold
                 genesets_refined = refine_genesets(
                     geneset_assignments=geneset_assignments,
@@ -1047,7 +1056,7 @@ class NNEAClassifier(BaseModel):
                     geneset_threshold=geneset_threshold
                 )
                 
-                # 如果配置了explain_knowledge，进行注释
+                # If explain_knowledge is configured, annotate
                 explain_knowledge_path = nadata.uns.get('explain_knowledge_path')
                 if explain_knowledge_path and genesets_refined:
                     from nnea.utils.enrichment import annotate_genesets
@@ -1057,15 +1066,15 @@ class NNEAClassifier(BaseModel):
                         pvalueCutoff=0.05
                     )
                     
-                    self.logger.info(f"完成基因集注释，注释结果数量: {len(genesets_annotated)}")
+                    self.logger.info(f"Gene set annotation complete, annotated {len(genesets_annotated)} results")
                 
             except Exception as e:
-                self.logger.warning(f"基因集精炼和注释失败: {e}")
-                # 使用简化的基因集创建方法
+                self.logger.warning(f"Gene set refinement and annotation failed: {e}")
+                # Use simplified geneset creation method
                 if len(top_genes) >= 10:
                     genesets_refined = [
-                        top_genes[:5],  # 前5个基因
-                        top_genes[5:10]  # 第6-10个基因
+                        top_genes[:5],  # First 5 genes
+                        top_genes[5:10]  # 6th to 10th genes
                     ]
             
             explain_results = {
@@ -1080,46 +1089,46 @@ class NNEAClassifier(BaseModel):
                 }
             }
             
-            # 保存解释结果
+            # Save explanation results
             nadata.uns['nnea_explain'] = explain_results
             
-            self.logger.info(f"模型解释完成:")
+            self.logger.info(f"Model explanation complete:")
 
-            # 按geneset_importance降序输出详细信息
-            self.logger.info(f"  - 基因集重要性排序结果:")
+            # Output detailed information in descending order of geneset_importance
+            self.logger.info(f"  - Geneset importance sorting results:")
 
-            # 创建排序索引
+            # Create sorting index
             sorted_indices = np.argsort(geneset_importance.flatten())[::-1]
 
-            # 获取基因名称列表
+            # Get gene name list
             gene_names = nadata.Var['Gene'].tolist()
 
-            # 输出表头
-            self.logger.info(f"    {'重要性分数':<12} {'基因集Key':<30} {'Top基因':<50}")
+            # Output header
+            self.logger.info(f"    {'Importance Score':<12} {'Geneset Key':<30} {'Top Genes':<50}")
             self.logger.info(f"    {'-'*12} {'-'*30} {'-'*50}")
             
-            # 按重要性降序输出
+            # Output in descending order of importance
             for i, idx in enumerate(sorted_indices):
-                if i >= 20:  # 只显示前20个
+                if i >= 20:  # Only show top 20
                     remaining = len(sorted_indices) - 20
                     if remaining > 0:
-                        self.logger.info(f"    ... 还有 {remaining} 个基因集")
+                        self.logger.info(f"    ... and {remaining} more genesets")
                     break
                 
                 importance_score = geneset_importance.flatten()[idx]
                 
-                # 获取对应的geneset key
+                # Get corresponding geneset key
                 geneset_key = f"Geneset_{idx}"
                 if genesets_annotated and idx < len(genesets_annotated):
-                    # 获取genesets_annotated的键
+                    # Get keys from genesets_annotated
                     keys_list = list(genesets_annotated.keys())
                     if idx < len(keys_list):
                         geneset_key = keys_list[idx]
                 
-                # 获取分配给该基因集的top genes
-                # 基于geneset_assignments矩阵，找到分配给该基因集的重要基因
-                gene_assignments = geneset_assignments[idx]  # 该基因集的基因分配权重
-                top_gene_indices = np.argsort(gene_assignments)[::-1][:5]  # 取前5个最重要的基因
+                # Get top genes assigned to this geneset
+                # Based on geneset_assignments matrix, find important genes assigned to this geneset
+                gene_assignments = geneset_assignments[idx]  # Gene assignments weights for this geneset
+                top_gene_indices = np.argsort(gene_assignments)[::-1][:5]  # Take top 5 most important genes
                 top_genes_for_geneset = [gene_names[j] for j in top_gene_indices if j < len(gene_names)]
                 top_genes_str = ", ".join(top_genes_for_geneset)
                 
@@ -1127,111 +1136,111 @@ class NNEAClassifier(BaseModel):
             
             return explain_results
         else:
-            raise ValueError(f"不支持的解释方法: {method}")
+            raise ValueError(f"Unsupported explanation method: {method}")
     
     def _calculate_geneset_importance_with_deeplift(self, nadata) -> np.ndarray:
         """
-        使用DeepLIFT计算基因集重要性
+        Calculate geneset importance using DeepLIFT
         
         Args:
-            nadata: nadata对象
+            nadata: nadata object
             
         Returns:
-            基因集重要性数组
+            Array of geneset importance
         """
         self.model.eval()
         
-        # 获取数据
+        # Get data
         X = nadata.X
         X_tensor = torch.FloatTensor(X).to(self.device)
         
-        # 为基因集层准备输入
+        # Prepare input for geneset layer
         R, S = self.model._prepare_input_for_geneset(X_tensor)
         
-        # 计算所有样本的积分梯度
+        # Calculate integrated gradients for all samples
         all_ig_scores = []
         
-        for i in range(min(100, len(X))):  # 限制样本数量以提高效率
-            # 获取单个样本
+        for i in range(min(100, len(X))):  # Limit sample number for efficiency
+            # Get single sample
             R_sample = R[i:i+1]
             S_sample = S[i:i+1]
             
-            # 计算该样本的积分梯度
+            # Calculate integrated gradients for this sample
             ig_score = self._integrated_gradients_for_genesets(
                 R_sample, S_sample, steps=50
             )
             all_ig_scores.append(ig_score.cpu().numpy())
         
-        # 计算平均重要性分数
+        # Calculate average importance scores
         avg_ig_scores = np.mean(all_ig_scores, axis=0)
         
         return avg_ig_scores
     
     def _integrated_gradients_for_genesets(self, R, S, target_class=None, baseline=None, steps=50):
         """
-        使用积分梯度解释基因集重要性
+        Explain geneset importance using integrated gradients
         
         Args:
-            R: 基因表达数据 (1, num_genes)
-            S: 基因排序索引 (1, num_genes)
-            target_class: 要解释的目标类别 (默认使用模型预测类别)
-            baseline: 基因集的基线值 (默认全零向量)
-            steps: 积分路径的插值步数
+            R: Gene expression data (1, num_genes)
+            S: Gene sorting index (1, num_genes)
+            target_class: Target class to explain (default is model's predicted class)
+            baseline: Baseline value for geneset (default is all zeros vector)
+            steps: Number of interpolation steps
             
         Returns:
-            ig: 基因集重要性分数 (num_sets,)
+            ig: Importance score for genesets (num_sets,)
         """
-        # 确保输入为单样本
-        assert R.shape[0] == 1 and S.shape[0] == 1, "只支持单样本解释"
+        # Ensure input is single sample
+        assert R.shape[0] == 1 and S.shape[0] == 1, "Single sample explanation only supported"
         
-        # 计算样本的富集分数 (es_scores)
+        # Calculate enrichment scores (es_scores)
         with torch.no_grad():
             es_scores = self.model.geneset_layer(R, S)  # (1, num_sets)
         
-        # 确定目标类别
+        # Determine target class
         if target_class is None:
             with torch.no_grad():
-                # 从R和S重构原始输入x
-                x = R  # 对于NNEA包中的模型，R就是原始输入
+                # Reconstruct original input x from R and S
+                x = R  # For models in NNEA package, R is the original input
                 output = self.model(x)
                 if self.model.output_dim == 1:
-                    target_class = 0  # 二分类
+                    target_class = 0  # Binary classification
                 else:
                     target_class = torch.argmax(output, dim=1).item()
         
-        # 设置基线值
+        # Set baseline value
         if baseline is None:
             baseline = torch.zeros_like(es_scores)
         
-        # 生成插值路径 (steps个点)
+        # Generate interpolation path (steps points)
         scaled_es_scores = []
         for step in range(1, steps + 1):
             alpha = step / steps
             interpolated = baseline + alpha * (es_scores - baseline)
             scaled_es_scores.append(interpolated)
         
-        # 存储梯度
+        # Store gradients
         gradients = []
         
-        # 计算插值点梯度
+        # Calculate gradients at interpolation points
         for interp_es in scaled_es_scores:
             interp_es = interp_es.clone().requires_grad_(True)
             
-            # 根据输出维度处理
+            # Handle output dimension
             if self.model.output_dim == 1:
-                # 二分类
+                # Binary classification
                 logits = self.model.focus_layer(interp_es)
                 target_logit = logits.squeeze()
             else:
-                # 多分类
+                # Multi-class
                 logits = self.model.focus_layer(interp_es)
                 target_logit = logits[0, target_class]
             
-            # 计算梯度
+            # Calculate gradient
             grad = torch.autograd.grad(outputs=target_logit, inputs=interp_es)[0]
             gradients.append(grad.detach())
         
-        # 整合梯度计算积分梯度
+        # Integrate gradients to calculate integrated gradients
         gradients = torch.stack(gradients)  # (steps, 1, num_sets)
         avg_gradients = torch.mean(gradients, dim=0)  # (1, num_sets)
         ig = (es_scores - baseline) * avg_gradients  # (1, num_sets)

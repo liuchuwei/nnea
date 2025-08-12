@@ -11,195 +11,195 @@ from nnea.model.base import BaseModel
 
 class NNEARegresser(BaseModel):
     """
-    NNEA回归器
-    实现可解释的回归模型，以TrainableGeneSetLayer为核心
+    NNEA Regressor
+    Implements an interpretable regression model with TrainableGeneSetLayer as the core
     """
 
     def __init__(self, config: Dict[str, Any]):
         """
-        初始化NNEA回归器
+        Initialize NNEA regressor
 
         Args:
-            config: 模型配置
+            config: Model configuration
         """
         super().__init__(config)
         self.task = 'regression'
 
     def build(self, nadata) -> None:
         """
-        构建模型
+        Build model
 
         Args:
-            nadata: nadata对象
+            nadata: nadata object
         """
         if nadata is None:
-            raise ValueError("nadata对象不能为空")
+            raise ValueError("nadata object cannot be empty")
 
-        # 获取输入维度
+        # Get input dimensions
         if hasattr(nadata, 'X') and nadata.X is not None:
-            input_dim = nadata.X.shape[1]  # 基因数量
+            input_dim = nadata.X.shape[1]  # Number of genes
         else:
-            raise ValueError("表达矩阵未加载")
+            raise ValueError("Expression matrix not loaded")
 
-        # 获取输出维度 - 回归任务输出维度为1
+        # Get output dimensions - regression task output dimension is 1
         output_dim = 1
 
-        # 获取nnea配置部分
+        # Get nnea configuration section
         nnea_config = self.config.get('nnea', {})
 
-        # 处理先验知识
+        # Process prior knowledge
         piror_knowledge = None
         use_piror_knowledge = nnea_config.get('piror_knowledge', {}).get('use_piror_knowledge', False)
         if use_piror_knowledge:
-            # 获取基因名称列表
+            # Get gene name list
             gene_names = None
             if hasattr(nadata, 'Var') and nadata.Var is not None:
                 gene_names = nadata.Var['Gene'].tolist()
 
             if gene_names is not None:
-                # 从nnea.io模块导入先验知识加载函数
+                # Import prior knowledge loading function from nnea.io module
                 from nnea.io._load import load_piror_knowledge
                 piror_knowledge = load_piror_knowledge(self.config, gene_names)
 
                 if piror_knowledge is not None:
-                    self.logger.info(f"成功加载先验知识，形状: {piror_knowledge.shape}")
+                    self.logger.info(f"Successfully loaded prior knowledge, shape: {piror_knowledge.shape}")
                     piror_knowledge = torch.tensor(piror_knowledge, dtype=torch.float32)
-                    # 确保先验知识矩阵与输入维度匹配
+                    # Ensure prior knowledge matrix matches input dimensions
                     if piror_knowledge.shape[1] != input_dim:
                         self.logger.warning(
-                            f"先验知识矩阵维度 ({piror_knowledge.shape[1]}) 与输入维度 ({input_dim}) 不匹配")
-                        # 如果维度不匹配，创建随机矩阵作为备用
+                            f"Prior knowledge matrix dimensions ({piror_knowledge.shape[1]}) do not match input dimensions ({input_dim})")
+                        # If dimensions don't match, create random matrix as backup
                         num_genesets = piror_knowledge.shape[0]
                         piror_knowledge = np.random.rand(num_genesets, input_dim)
                         piror_knowledge = (piror_knowledge > 0.8).astype(np.float32)
                 else:
-                    self.logger.warning("先验知识加载失败，使用随机矩阵")
+                    self.logger.warning("Prior knowledge loading failed, using random matrix")
                     num_genesets = nnea_config.get('geneset_layer', {}).get('num_genesets', 20)
                     piror_knowledge = np.random.rand(num_genesets, input_dim)
                     piror_knowledge = (piror_knowledge > 0.8).astype(np.float32)
             else:
-                self.logger.warning("无法获取基因名称列表，使用随机矩阵")
+                self.logger.warning("Cannot get gene name list, using random matrix")
                 num_genesets = nnea_config.get('geneset_layer', {}).get('num_genesets', 20)
                 piror_knowledge = np.random.rand(num_genesets, input_dim)
                 piror_knowledge = (piror_knowledge > 0.8).astype(np.float32)
 
-        # 处理explain_knowledge配置
+        # Process explain_knowledge configuration
         explain_knowledge_path = self.config.get('explain', {}).get('explain_knowledge')
         if explain_knowledge_path:
-            # 确保nadata有uns属性
+            # Ensure nadata has uns attribute
             if not hasattr(nadata, 'uns'):
                 nadata.uns = {}
 
-            # 保存explain_knowledge路径到nadata的uns字典中
+            # Save explain_knowledge path to nadata's uns dictionary
             nadata.uns['explain_knowledge_path'] = explain_knowledge_path
-            self.logger.info(f"已保存explain_knowledge路径到nadata.uns: {explain_knowledge_path}")
+            self.logger.info(f"Saved explain_knowledge path to nadata.uns: {explain_knowledge_path}")
 
-        # 更新配置
+        # Update configuration
         self.config['input_dim'] = input_dim
         self.config['output_dim'] = output_dim
-        self.config['device'] = str(self.device)  # 确保设备配置正确传递
+        self.config['device'] = str(self.device)  # Ensure device configuration is correctly passed
 
-        # 更新nnea配置中的先验知识
+        # Update prior knowledge in nnea configuration
         if 'nnea' not in self.config:
             self.config['nnea'] = {}
         if 'piror_knowledge' not in self.config['nnea']:
             self.config['nnea']['piror_knowledge'] = {}
         self.config['nnea']['piror_knowledge']['piror_knowledge'] = piror_knowledge
 
-        # 创建模型
+        # Create model
         self.model = NNEAModel(self.config)
         self.model.to(self.device)
 
-        # 确保所有模型组件都在正确的设备上
+        # Ensure all model components are on the correct device
         if hasattr(self.model, 'geneset_layer'):
             self.model.geneset_layer.to(self.device)
 
-        self.logger.info(f"NNEA回归器已构建: 输入维度={input_dim}, 输出维度={output_dim}")
+        self.logger.info(f"NNEA regressor built: input_dim={input_dim}, output_dim={output_dim}")
         num_genesets = nnea_config.get('geneset_layer', {}).get('num_genesets', 20)
-        self.logger.info(f"基因集数量: {num_genesets}")
-        self.logger.info(f"使用先验知识: {use_piror_knowledge}")
+        self.logger.info(f"Number of genesets: {num_genesets}")
+        self.logger.info(f"Using prior knowledge: {use_piror_knowledge}")
 
     def train(self, nadata, verbose: int = 1, max_epochs: Optional[int] = None, continue_training: bool = False,
               **kwargs) -> Dict[str, Any]:
         """
-        训练模型
+        Train model
 
         Args:
-            nadata: nadata对象
-            verbose: 详细程度
-                0=只显示进度条
-                1=显示训练损失、训练正则化损失、验证损失、验证正则化损失
-                2=在verbose=1基础上增加显示MSE、MAE、R2等评估指标
-            max_epochs: 最大训练轮数，如果为None则使用配置中的epochs
-            continue_training: 是否继续训练（用于tailor策略）
-            **kwargs: 额外参数
+            nadata: nadata object
+            verbose: Verbosity level
+                0=Only show progress bar
+                1=Show training loss, training regularization loss, validation loss, validation regularization loss
+                2=On top of verbose=1, also show MSE, MAE, R2 and other evaluation metrics
+            max_epochs: Maximum training epochs, if None use epochs from configuration
+            continue_training: Whether to continue training (for tailor strategy)
+            **kwargs: Additional parameters
 
         Returns:
-            训练结果字典
+            Training result dictionary
         """
         if self.model is None:
-            raise ValueError("模型未构建")
+            raise ValueError("Model not built")
 
-        # 设置CUDA调试环境变量
+        # Set CUDA debug environment variables
         if self.device.type == 'cuda':
             import os
             os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-            self.logger.info("已启用CUDA同步执行模式，有助于调试CUDA错误")
+            self.logger.info("CUDA synchronous execution mode enabled, helpful for debugging CUDA errors")
 
-        # 准备数据
+        # Prepare data
         X = nadata.X
 
-        # 获取标签
+        # Get labels
         config = nadata.Model.get_config()
 
-        # 检查表型数据是否存在
+        # Check if phenotype data exists
         if not hasattr(nadata, 'Meta') or nadata.Meta is None:
-            raise ValueError(f"未找到表型数据，请检查数据加载是否正确")
+            raise ValueError(f"Phenotype data not found, please check if data loading is correct")
 
-        # 获取标签数据
+        # Get label data
         y = nadata.Meta["target"].values
 
-        # 获取已有的数据索引
+        # Get existing data indices
         train_indices = nadata.Model.get_indices('train')
         test_indices = nadata.Model.get_indices('test')
 
-        # 使用已有的train和test索引
+        # Use existing train and test indices
         train_indices = np.array(train_indices)
         test_indices = np.array(test_indices)
 
-        # 获取train索引对应的数据
+        # Get data corresponding to train indices
         X_train_full = X[train_indices]
         y_train_full = y[train_indices]
 
-        # 将train数据进一步分割为train和validation
+        # Further split train data into train and validation
         val_size = config.get('dataset', {}).get('val_size', 0.2)
         random_state = config.get('dataset', {}).get('random_state', 42)
 
-        # 从train数据中分割出validation
+        # Split validation from train data
         X_train, X_val, y_train, y_val = train_test_split(
             X_train_full, y_train_full, test_size=val_size, random_state=random_state
         )
 
-        # 计算新的train和validation索引
+        # Calculate new train and validation indices
         n_train_full = len(train_indices)
 
-        # 计算validation在原始train索引中的位置
+        # Calculate validation position in original train indices
         val_size_adjusted = val_size
         n_val = int(n_train_full * val_size_adjusted)
         n_train = n_train_full - n_val
 
-        # 更新索引
+        # Update indices
         train_indices_final = train_indices[:n_train]
         val_indices = train_indices[n_train:]
 
-        # 保存更新后的索引
+        # Save updated indices
         nadata.Model.set_indices(
             train_idx=train_indices_final.tolist(),
             test_idx=test_indices.tolist(),
             val_idx=val_indices.tolist()
         )
 
-        # 训练参数
+        # Training parameters
         training_config = config.get('training', {})
         if max_epochs is None:
             epochs = training_config.get('epochs', 100)
@@ -209,33 +209,33 @@ class NNEARegresser(BaseModel):
         batch_size = training_config.get('batch_size', 32)
         reg_weight = training_config.get('regularization_weight', 0.1)
 
-        # 转换为张量并构建TensorDataset
+        # Convert to tensors and build TensorDataset
         X_train_tensor = torch.FloatTensor(X_train)
-        y_train_tensor = torch.FloatTensor(y_train)  # 回归任务使用FloatTensor
+        y_train_tensor = torch.FloatTensor(y_train)  # Regression task uses FloatTensor
 
-        # 构建训练数据集
+        # Build training dataset
         train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
 
-        # 添加调试信息
-        self.logger.info(f"训练数据形状: X_train={X_train_tensor.shape}, y_train={y_train_tensor.shape}")
-        self.logger.info(f"训练标签值范围: {y_train_tensor.min().item():.4f} - {y_train_tensor.max().item():.4f}")
-        self.logger.info(f"模型输出维度: {self.model.output_dim}")
+        # Add debug information
+        self.logger.info(f"Training data shape: X_train={X_train_tensor.shape}, y_train={y_train_tensor.shape}")
+        self.logger.info(f"Training label value range: {y_train_tensor.min().item():.4f} - {y_train_tensor.max().item():.4f}")
+        self.logger.info(f"Model output dimension: {self.model.output_dim}")
 
-        # 构建验证数据集（如果有验证数据）
+        # Build validation dataset (if validation data exists)
         val_dataset = None
         if X_val is not None and y_val is not None:
             X_val_tensor = torch.FloatTensor(X_val)
-            y_val_tensor = torch.FloatTensor(y_val)  # 回归任务使用FloatTensor
+            y_val_tensor = torch.FloatTensor(y_val)  # Regression task uses FloatTensor
             val_dataset = torch.utils.data.TensorDataset(X_val_tensor, y_val_tensor)
-            self.logger.info(f"验证数据形状: X_val={X_val_tensor.shape}, y_val={y_val_tensor.shape}")
-            self.logger.info(f"验证标签值范围: {y_val_tensor.min().item():.4f} - {y_val_tensor.max().item():.4f}")
+            self.logger.info(f"Validation data shape: X_val={X_val_tensor.shape}, y_val={y_val_tensor.shape}")
+            self.logger.info(f"Validation label value range: {y_val_tensor.min().item():.4f} - {y_val_tensor.max().item():.4f}")
 
-        # 创建数据加载器
+        # Create data loaders
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=0  # 设置为0避免多进程问题
+            num_workers=0  # Set to 0 to avoid multiprocessing issues
         )
 
         val_loader = None
@@ -244,83 +244,83 @@ class NNEARegresser(BaseModel):
                 val_dataset,
                 batch_size=batch_size,
                 shuffle=False,
-                num_workers=0  # 设置为0避免多进程问题
+                num_workers=0  # Set to 0 to avoid multiprocessing issues
             )
 
-        # 优化器和损失函数
+        # Optimizer and loss function
         optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
-        criterion = nn.MSELoss()  # 回归任务使用MSE损失
+        criterion = nn.MSELoss()  # Regression task uses MSE loss
 
-        # 模型初始化阶段 - 训练TrainableGeneSetLayer的indicator
+        # Model initialization phase - train TrainableGeneSetLayer indicator
         if not continue_training:
-            self.logger.info("🔧 开始模型初始化阶段 - 训练基因集层指示矩阵...")
+            self.logger.info("🔧 Starting model initialization phase - training geneset layer indicator matrix...")
 
-            # 根据配置决定是否在初始化阶段启用assist_layer
+            # Decide whether to enable assist_layer during initialization based on configuration
             if self.model.use_assist_in_init:
                 self.model.set_assist_layer_mode(True)
-                self.logger.info("📊 初始化阶段：启用辅助层，直接映射geneset输出为预测值")
+                self.logger.info("📊 Initialization phase: Enable assist layer, directly map geneset output to prediction values")
             else:
                 self.model.set_assist_layer_mode(False)
-                self.logger.info("📊 初始化阶段：使用标准模式，使用focus_layer进行预测")
+                self.logger.info("📊 Initialization phase: Use standard mode, use focus_layer for prediction")
 
             init_results = self._initialize_geneset_layer(train_loader, optimizer, verbose)
-            self.logger.info(f"✅ 模型初始化完成: {init_results}")
+            self.logger.info(f"✅ Model initialization completed: {init_results}")
 
-            # 初始化完成后，切换到标准模式（使用focus_layer）
+            # After initialization, switch to standard mode (use focus_layer)
             self.model.set_assist_layer_mode(False)
-            self.logger.info("🔄 初始化完成：切换到标准模式，使用focus_layer进行预测")
+            self.logger.info("🔄 Initialization completed: Switch to standard mode, use focus_layer for prediction")
 
-            # 将初始化结果保存到nadata.uns中
+            # Save initialization results to nadata.uns
             if not hasattr(nadata, 'uns'):
                 nadata.uns = {}
             nadata.uns['init_results'] = init_results
-            self.logger.info("💾 初始化结果已保存到nadata.uns中")
+            self.logger.info("💾 Initialization results saved to nadata.uns")
         else:
-            # 继续训练时，确保使用标准模式
+            # When continuing training, ensure standard mode is used
             self.model.set_assist_layer_mode(False)
-            self.logger.info("🔄 继续训练：使用标准模式，使用focus_layer进行预测")
+            self.logger.info("🔄 Continue training: Use standard mode, use focus_layer for prediction")
 
-        # 早停机制参数
+        # Early stopping mechanism parameters
         patience = training_config.get('patience', 10)
-        min_delta = 1e-6  # 最小改善阈值
+        min_delta = 1e-6  # Minimum improvement threshold
 
-        # 早停变量初始化
+        # Early stopping variable initialization
         best_val_loss = float('inf')
         patience_counter = 0
         early_stopped = False
 
-        # 添加checkpoint保存相关变量
+        # Add checkpoint saving related variables
         best_model_state = None
         best_epoch = 0
         outdir = config.get('global', {}).get('outdir', 'experiment/test')
 
-        # 训练循环
+        # Training loop
         train_losses = {'loss': [], 'reg_loss': []}
         val_losses = {'loss': [], 'reg_loss': []}
 
         if verbose >= 1:
             if continue_training:
-                self.logger.info(f"继续训练NNEA模型... (剩余{epochs}个epoch)")
+                self.logger.info(f"Continue training NNEA model... (remaining {epochs} epochs)")
             else:
-                self.logger.info("开始正式训练NNEA模型...")
-            self.logger.info(f"早停配置: patience={patience}, min_delta={min_delta}")
-            self.logger.info(f"Checkpoint保存目录: {outdir}")
+                self.logger.info("Start formal training of NNEA model...")
+            self.logger.info(f"Early stopping configuration: patience={patience}, min_delta={min_delta}")
+            self.logger.info(f"Checkpoint save directory: {outdir}")
 
-        # 导入tqdm用于进度条
+        # Import tqdm for progress bar
         try:
             from tqdm import tqdm
             use_tqdm = True
         except ImportError:
             use_tqdm = False
 
-        # 创建进度条（只有verbose=0时显示）
+        # Create progress bar (only show when verbose=0)
         if verbose == 0 and use_tqdm:
-            pbar = tqdm(range(epochs), desc="训练进度")
+            pbar = tqdm(range(epochs), desc="Training Progress")
         else:
             pbar = range(epochs)
 
         for epoch in pbar:
-            # 训练模式
+            # Training mode
             self.model.train()
             epoch_loss = 0.0
             epoch_reg_loss = 0.0
@@ -328,38 +328,38 @@ class NNEARegresser(BaseModel):
             train_predictions = []
             train_targets = []
 
-            # 使用数据加载器进行批处理训练
+            # Use data loader for batch training
             for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
-                # 将数据移动到设备
+                # Move data to device
                 batch_X = batch_X.to(self.device)
                 batch_y = batch_y.to(self.device)
 
                 optimizer.zero_grad()
 
                 try:
-                    # 前向传播
+                    # Forward pass
                     outputs = self.model(batch_X)
 
-                    # 检查输出是否包含NaN或无穷大
+                    # Check if output contains NaN or infinity
                     if torch.isnan(outputs).any() or torch.isinf(outputs).any():
-                        self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: 模型输出包含NaN或无穷大值")
+                        self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: Model output contains NaN or infinite values")
                         continue
 
-                    loss = criterion(outputs.squeeze(), batch_y)  # 回归任务需要squeeze
+                    loss = criterion(outputs.squeeze(), batch_y)  # Regression task needs squeeze
 
-                    # 检查损失值是否有效
+                    # Check if loss value is valid
                     if torch.isnan(loss) or torch.isinf(loss):
-                        self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: 损失值为NaN或无穷大")
+                        self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: Loss value is NaN or infinite")
                         continue
 
-                    # 添加正则化损失
+                    # Add regularization loss
                     reg_loss = self.model.regularization_loss()
                     total_loss = loss + reg_weight * reg_loss
 
-                    # 反向传播
+                    # Backward pass
                     total_loss.backward()
 
-                    # 梯度裁剪
+                    # Gradient clipping
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
                     optimizer.step()
@@ -368,7 +368,7 @@ class NNEARegresser(BaseModel):
                     epoch_reg_loss += reg_loss.item()
                     num_batches += 1
 
-                    # 收集训练预测结果用于计算指标
+                    # Collect training prediction results for calculating metrics
                     if verbose >= 2:
                         predictions = outputs.squeeze().cpu().detach().numpy()
                         targets = batch_y.cpu().detach().numpy()
@@ -376,27 +376,27 @@ class NNEARegresser(BaseModel):
                         train_targets.append(targets)
 
                 except Exception as e:
-                    self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: 训练过程中出现错误: {e}")
+                    self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: Error occurred during training: {e}")
                     continue
 
-            # 计算平均损失
+            # Calculate average loss
             if num_batches > 0:
                 avg_loss = epoch_loss / num_batches
                 avg_reg_loss = epoch_reg_loss / num_batches
                 train_losses['loss'].append(avg_loss)
                 train_losses['reg_loss'].append(avg_reg_loss)
 
-                # verbose=1时显示训练损失
+                # Show training loss when verbose=1
                 if verbose >= 1:
                     self.logger.info(f"Epoch {epoch}: Train Loss={avg_loss:.4f}, Train Reg_Loss={avg_reg_loss:.4f}")
 
-                # verbose=2时计算并显示训练集评估指标
+                # Calculate and show training set evaluation metrics when verbose=2
                 if verbose >= 2 and train_predictions and train_targets:
-                    # 合并所有批次的预测结果
+                    # Combine prediction results from all batches
                     all_train_predictions = np.concatenate(train_predictions)
                     all_train_targets = np.concatenate(train_targets)
 
-                    # 计算训练集评估指标
+                    # Calculate training set evaluation metrics
                     train_metrics = self._calculate_validation_metrics(all_train_predictions, all_train_targets)
 
                     # 显示训练集评估指标

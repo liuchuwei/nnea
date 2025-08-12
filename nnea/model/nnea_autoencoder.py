@@ -297,39 +297,17 @@ class NNEAAutoencoder(BaseModel):
             )
         
         # 优化器和损失函数 - 现在需要同时优化encoder和decoder
-        all_params = list(self.encoder.parameters()) + list(self.decoder.parameters())
-        optimizer = torch.optim.Adam(all_params, lr=learning_rate)
-        criterion = nn.MSELoss()  # 自编码器使用MSE损失
-        
-        # 模型初始化阶段 - 训练TrainableGeneSetLayer的indicator
-        if not continue_training:
-            self.logger.info("🔧 开始模型初始化阶段 - 训练基因集层指示矩阵...")
+        try:
+            all_params = list(self.encoder.parameters()) + list(self.decoder.parameters())
+            if not all_params:
+                raise ValueError("模型参数为空，无法创建优化器")
             
-            # 根据配置决定是否在初始化阶段启用assist_layer
-            if self.encoder.use_assist_in_init:
-                self.encoder.set_assist_layer_mode(True)
-                self.logger.info("📊 初始化阶段：启用辅助层，直接映射geneset输出为重构结果")
-            else:
-                self.encoder.set_assist_layer_mode(False)
-                self.logger.info("📊 初始化阶段：使用标准模式，使用focus_layer进行重构")
-            
-            init_results = self._initialize_geneset_layer(train_loader, optimizer, verbose)
-            self.logger.info(f"✅ 模型初始化完成: {init_results}")
-            
-            # 初始化完成后，切换到标准模式（使用focus_layer）
-            self.encoder.set_assist_layer_mode(False)
-            self.logger.info("🔄 初始化完成：切换到标准模式，使用focus_layer进行重构")
-            
-            # 将初始化结果保存到nadata.uns中
-            if not hasattr(nadata, 'uns'):
-                nadata.uns = {}
-            nadata.uns['init_results'] = init_results
-            self.logger.info("💾 初始化结果已保存到nadata.uns中")
-        else:
-            # 继续训练时，确保使用标准模式
-            self.encoder.set_assist_layer_mode(False)
-            self.logger.info("🔄 继续训练：使用标准模式，使用focus_layer进行重构")
-        
+            optimizer = torch.optim.Adam(all_params, lr=learning_rate)
+            criterion = nn.MSELoss()  # 自编码器使用MSE损失
+        except Exception as e:
+            self.logger.error(f"创建优化器时出现错误: {e}")
+            raise
+
         # 早停机制参数
         patience = training_config.get('patience', 10)
         min_delta = 1e-6  # 最小改善阈值
@@ -381,11 +359,10 @@ class NNEAAutoencoder(BaseModel):
             train_targets = []
             
             # 使用数据加载器进行批处理训练
-            for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
+            for batch_idx, batch_X in enumerate(train_loader):
                 # 将数据移动到设备
-                batch_X = batch_X.to(self.device)
-                batch_y = batch_y.to(self.device)
-                
+                batch_X = batch_X[0].to(self.device)
+
                 optimizer.zero_grad()
                 
                 try:
@@ -397,7 +374,7 @@ class NNEAAutoencoder(BaseModel):
                         self.logger.error(f"Epoch {epoch}, Batch {batch_idx}: 模型输出包含NaN或无穷大值")
                         continue
                     
-                    loss = criterion(outputs, batch_y)
+                    loss = criterion(outputs, batch_X)
                     
                     # 检查损失值是否有效
                     if torch.isnan(loss) or torch.isinf(loss):
@@ -424,7 +401,7 @@ class NNEAAutoencoder(BaseModel):
                     # 收集训练预测结果用于计算指标
                     if verbose >= 2:
                         predictions = outputs.cpu().detach().numpy()
-                        targets = batch_y.cpu().detach().numpy()
+                        targets = batch_X.cpu().detach().numpy()  # 自编码器：target是输入本身
                         train_predictions.append(predictions)
                         train_targets.append(targets)
                     
@@ -467,13 +444,12 @@ class NNEAAutoencoder(BaseModel):
                 val_targets = []
                 
                 with torch.no_grad():
-                    for batch_X, batch_y in val_loader:
-                        batch_X = batch_X.to(self.device)
-                        batch_y = batch_y.to(self.device)
+                    for batch_X in val_loader:
+                        batch_X = batch_X[0].to(self.device)
                         
                         try:
                             outputs = self.forward(batch_X)
-                            loss = criterion(outputs, batch_y)
+                            loss = criterion(outputs, batch_X)  # 自编码器：输出与输入比较
                             reg_loss = self.encoder.regularization_loss()
                             
                             val_loss += loss.item()
@@ -483,7 +459,7 @@ class NNEAAutoencoder(BaseModel):
                             # 收集预测结果用于计算指标
                             if verbose >= 2:
                                 predictions = outputs.cpu().detach().numpy()
-                                targets = batch_y.cpu().detach().numpy()
+                                targets = batch_X.cpu().detach().numpy()  # 自编码器：target是输入本身
                                 val_predictions.append(predictions)
                                 val_targets.append(targets)
                             
@@ -632,142 +608,6 @@ class NNEAAutoencoder(BaseModel):
                 'mse': 0.0,
                 'mae': 0.0
             }
-
-    def _initialize_geneset_layer(self, train_loader, optimizer, verbose: int = 1) -> Dict[str, Any]:
-        """
-        初始化基因集层 - 训练indicator直到满足条件
-        
-        Args:
-            train_loader: 训练数据加载器
-            optimizer: 优化器
-            verbose: 详细程度
-            
-        Returns:
-            初始化结果字典
-        """
-        self.logger.info("🔧 开始基因集层初始化...")
-        
-        # 确认当前使用assist_layer模式
-        if self.encoder.get_assist_layer_mode():
-            self.logger.info("📊 初始化阶段：使用辅助层直接映射geneset输出为重构结果")
-        else:
-            self.logger.warning("⚠️ 初始化阶段：未使用辅助层，建议在初始化阶段启用assist_layer")
-        
-        # 获取基因集层配置
-        config = self.config.get('nnea', {}).get('geneset_layer', {})
-        geneset_threshold = config.get('geneset_threshold', 1e-5)
-        max_set_size = config.get('max_set_size', 50)
-        init_max_epochs = config.get('init_max_epochs', 100)
-        init_patience = config.get('init_patience', 10)
-        
-        # 获取初始化阶段的损失权重配置
-        init_task_loss_weight = config.get('init_task_loss_weight', 1.0)
-        init_reg_loss_weight = config.get('init_reg_loss_weight', 10.0)
-        init_total_loss_weight = config.get('init_total_loss_weight', 1.0)
-        
-        self.logger.info(f"初始化参数: geneset_threshold={geneset_threshold}, max_set_size={max_set_size}")
-        self.logger.info(f"初始化损失权重: task_loss_weight={init_task_loss_weight}, reg_loss_weight={init_reg_loss_weight}, total_loss_weight={init_total_loss_weight}")
-        
-        # 初始化变量
-        best_condition_count = float('inf')
-        patience_counter = 0
-        init_epochs = 0
-        
-        # 初始化训练循环
-        for epoch in range(init_max_epochs):
-            self.model.train()
-            epoch_loss = 0.0
-            num_batches = 0
-            
-            # 训练一个epoch
-            for batch_X, batch_y in train_loader:
-                batch_X = batch_X.to(self.device)
-                batch_y = batch_y.to(self.device)
-                
-                optimizer.zero_grad()
-                
-                try:
-                    # 前向传播 - 在初始化阶段，我们只训练encoder的geneset层
-                    # 使用encoder的assist_layer模式进行重构
-                    if self.encoder.get_assist_layer_mode():
-                        # 使用assist_layer直接映射
-                        geneset_output = self.encoder.geneset_layer(*self.encoder._prepare_input_for_geneset(batch_X))
-                        outputs = self.encoder.assist_layer(geneset_output)
-                    else:
-                        # 使用完整的自编码器
-                        outputs = self.forward(batch_X)
-                    
-                    # 计算任务损失（重构损失）
-                    task_loss = self._calculate_task_loss(outputs, batch_y)
-                    
-                    # 计算正则化损失
-                    reg_loss = self.encoder.regularization_loss()
-                    
-                    # 计算总损失（使用配置的权重）
-                    total_loss = (init_task_loss_weight * task_loss + 
-                                init_reg_loss_weight * reg_loss) * init_total_loss_weight
-                    
-                    # 反向传播
-                    total_loss.backward()
-                    
-                    # 梯度裁剪 - 在初始化阶段只裁剪encoder的参数
-                    torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
-                    
-                    optimizer.step()
-                    
-                    epoch_loss += reg_loss.item()
-                    num_batches += 1
-                    
-                except Exception as e:
-                    self.logger.error(f"初始化Epoch {epoch}, Batch: 训练过程中出现错误: {e}")
-                    continue
-            
-            # 检查基因集条件
-            condition_met = self._check_geneset_condition(geneset_threshold, max_set_size)
-            
-            if condition_met:
-                init_epochs = epoch + 1
-                self.logger.info(f"✅ 基因集层初始化完成，在第{init_epochs}个epoch满足条件")
-                break
-            
-            # 检查是否达到最大轮数
-            if epoch == init_max_epochs - 1:
-                self.logger.warning(f"⚠️ 达到最大初始化轮数({init_max_epochs})，强制结束初始化")
-                init_epochs = init_max_epochs
-                break
-            
-            # 早停检查
-            current_condition_count = self._count_genesets_above_threshold(geneset_threshold, max_set_size)
-            total_gene_sets = self.model.geneset_layer.num_sets if hasattr(self.model, 'geneset_layer') else self.model.gene_set_layer.num_sets
-            # 只有当current_condition_count开始减少（即小于total_gene_sets）时才启动早停机制
-            if current_condition_count < total_gene_sets:
-                if current_condition_count < best_condition_count:
-                    best_condition_count = current_condition_count
-                    patience_counter = 0
-                else:
-                    patience_counter += 1
-            if patience_counter >= init_patience:
-                self.logger.info(f"⚠️ 初始化早停，连续{init_patience}个epoch未改善")
-                init_epochs = epoch + 1
-                break
-            
-            if verbose >= 2 and (epoch % 20 == 0 or epoch == init_max_epochs - 1):
-                condition_count = total_gene_sets - current_condition_count
-                self.logger.info(f"初始化Epoch {epoch}: Reg Loss={epoch_loss/num_batches:.4f}, 满足条件的基因集数: {condition_count}/{total_gene_sets}")
-
-        # 返回初始化结果
-        init_results = {
-            'init_epochs': init_epochs,
-            'geneset_threshold': geneset_threshold,
-            'max_set_size': max_set_size,
-            'init_task_loss_weight': init_task_loss_weight,
-            'init_reg_loss_weight': init_reg_loss_weight,
-            'init_total_loss_weight': init_total_loss_weight,
-            'final_condition_met': self._check_geneset_condition(geneset_threshold, max_set_size),
-            'final_condition_count': self._count_genesets_above_threshold(geneset_threshold, max_set_size)
-        }
-        
-        return init_results
     
     def _calculate_task_loss(self, outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
@@ -866,13 +706,24 @@ class NNEAAutoencoder(BaseModel):
         if not self.is_trained:
             raise ValueError("模型未训练")
         
+        if nadata is None or nadata.X is None:
+            raise ValueError("无效的nadata对象或数据矩阵")
+        
         self.encoder.eval()
         self.decoder.eval()
-        with torch.no_grad():
-            X = nadata.X
-            X_tensor = torch.FloatTensor(X).to(self.device)
-            outputs = self.forward(X_tensor)
-            return outputs.cpu().numpy()
+        
+        try:
+            with torch.no_grad():
+                X = nadata.X
+                if not isinstance(X, np.ndarray):
+                    X = np.array(X)
+                
+                X_tensor = torch.FloatTensor(X).to(self.device)
+                outputs = self.forward(X_tensor)
+                return outputs.cpu().numpy()
+        except Exception as e:
+            self.logger.error(f"预测过程中出现错误: {e}")
+            raise
     
     def evaluate(self, nadata, split='test') -> Dict[str, float]:
         """
@@ -945,8 +796,11 @@ class NNEAAutoencoder(BaseModel):
                 # 使用DeepLIFT计算基因集重要性
                 geneset_importance = self._calculate_geneset_importance_with_deeplift(nadata)
                 
-                # 获取注意力权重（占位符）
-                attention_weights = self.encoder.get_attention_weights().detach().cpu().numpy()
+                # 获取注意力权重（如果存在）
+                if hasattr(self.encoder, 'get_attention_weights'):
+                    attention_weights = self.encoder.get_attention_weights().detach().cpu().numpy()
+                else:
+                    attention_weights = np.ones(self.encoder.num_genesets)  # 默认均匀权重
                 
                 # 特征重要性使用基因集重要性作为替代
                 feature_importance = geneset_importance
@@ -991,8 +845,8 @@ class NNEAAutoencoder(BaseModel):
                 
                 # 精炼基因集
                 from nnea.utils.enrichment import refine_genesets
-                # 从模型中获取geneset_threshold参数
-                geneset_threshold = self.model.geneset_layer.geneset_threshold
+                # 从编码器中获取geneset_threshold参数
+                geneset_threshold = self.encoder.geneset_layer.geneset_threshold
                 genesets_refined = refine_genesets(
                     geneset_assignments=geneset_assignments,
                     geneset_importance=geneset_importance,
@@ -1094,7 +948,8 @@ class NNEAAutoencoder(BaseModel):
         Returns:
             基因集重要性数组
         """
-        self.model.eval()
+        self.encoder.eval()
+        self.decoder.eval()
         
         # 获取数据
         X = nadata.X
@@ -1146,9 +1001,8 @@ class NNEAAutoencoder(BaseModel):
         # 确定目标类别
         if target_class is None:
             with torch.no_grad():
-                # 从R和S重构原始输入x
-                x = R  # 对于NNEA包中的模型，R就是原始输入
-                output = self.forward(x)
+                    # 使用自编码器进行前向传播
+                output = self.forward(R)
                 if self.encoder.output_dim == 1:
                     target_class = 0  # 二分类
                 else:

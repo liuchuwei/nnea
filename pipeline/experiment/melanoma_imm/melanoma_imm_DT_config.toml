@@ -1,0 +1,59 @@
+# DecisionTreeClassifier model configuration file
+# Global configuration
+[global]
+    model = "decision_tree"
+    device = "auto"  # Auto-detect GPU/CPU
+    seed = 42
+    inputfl = "./datasets/tumor_imm/melanoma_immunotherapy.pkl"
+    outputfl = "melanoma_imm_DT.pkl"
+    outdir = "experiment/melanoma_imm_DT"
+
+# Dataset configuration
+[dataset]
+    test_size = 0.2
+    val_size = 0.2
+    random_state = 42
+
+# DecisionTreeClassifier model configuration
+[decision_tree]
+    # Basic parameters
+    criterion = ["gini", "entropy", "log_loss"]  # Split criterion
+    max_depth = [3, 5, 10, 20]  # Maximum depth
+    min_samples_split = [2, 5, 10]  # Minimum samples required for split
+    min_samples_leaf = [1, 2, 4]  # Minimum samples at leaf node
+    max_features = ["sqrt", "log2"]  # Maximum number of features
+
+    # Other optional parameters
+    random_state = 42  # Random seed
+    class_weight = "balanced"  # Class weight
+
+    # Cross-validation configuration
+    cv_folds = 5  # Cross-validation folds
+    cv_scoring = "roc_auc"  # Evaluation metric
+    n_jobs = 8  # Number of parallel jobs, -1 means use all CPU cores
+
+    # Feature selection configuration
+    feature_selection = true
+    selection_method = "random_forest"
+    n_features = 30
+    selection_alpha = 0.01
+
+    # Data preprocessing configuration
+    [decision_tree.preprocessing]
+        fill_na = true
+        fill_method = "mean"
+        scale_data = true
+        scale_method = "standard"
+
+# Training configuration
+[training]
+    verbose = 1
+    save_model = true
+    save_format = "pickle"
+    save_data = true
+
+# Evaluation configuration
+[evaluation]
+    metrics = ["roc_auc", "classification_report"]
+    save_predictions = true
+    save_probabilities = true

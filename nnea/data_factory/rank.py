@@ -1,6 +1,6 @@
 """
-生存排序矩阵模块（na.rank）
-返回rank_exp和sort_exp，参考utils.io_utils.py
+Survival ranking matrix module (na.rank)
+Returns rank_exp and sort_exp, refer to utils.io_utils.py
 """
 
 import numpy as np
@@ -11,25 +11,25 @@ from scipy import stats
 
 class rank:
     """
-    生存排序矩阵类，提供排序和排名功能
+    Survival ranking matrix class, provides sorting and ranking functionality
     """
     
     @staticmethod
     def expToRank(nadata, method: str = "rank") -> Tuple[np.ndarray, np.ndarray]:
         """
-        将表达矩阵转换为排名矩阵
+        Convert expression matrix to ranking matrix
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含表达矩阵的nadata对象
+        nadata : nadata object
+            nadata object containing expression matrix
         method : str
-            排名方法：'rank', 'percentile', 'zscore'
+            Ranking method: 'rank', 'percentile', 'zscore'
             
         Returns:
         --------
         Tuple[np.ndarray, np.ndarray]
-            (rank_exp, sort_exp) 排名矩阵和排序矩阵
+            (rank_exp, sort_exp) ranking matrix and sorted matrix
         """
         if nadata.X is None:
             raise ValueError("Expression matrix X is None")
@@ -37,39 +37,39 @@ class rank:
         X = nadata.X
         
         if method == "rank":
-            # 简单排名
+            # Simple ranking
             rank_exp = np.zeros_like(X)
             sort_exp = np.zeros_like(X)
             
             for i in range(X.shape[0]):
-                # 对每个基因进行排名
+                # Rank each gene
                 sorted_indices = np.argsort(X[i, :])
                 sort_exp[i, :] = X[i, sorted_indices]
                 
-                # 计算排名
+                # Calculate ranking
                 rank_exp[i, sorted_indices] = np.arange(X.shape[1])
                 
         elif method == "percentile":
-            # 百分位数排名
+            # Percentile ranking
             rank_exp = np.zeros_like(X)
             sort_exp = np.zeros_like(X)
             
             for i in range(X.shape[0]):
-                # 计算百分位数
+                # Calculate percentiles
                 percentiles = stats.rankdata(X[i, :], method='average') / len(X[i, :]) * 100
                 rank_exp[i, :] = percentiles
                 
-                # 排序后的表达值
+                # Sorted expression values
                 sorted_indices = np.argsort(X[i, :])
                 sort_exp[i, :] = X[i, sorted_indices]
                 
         elif method == "zscore":
-            # Z-score标准化
+            # Z-score standardization
             rank_exp = np.zeros_like(X)
             sort_exp = np.zeros_like(X)
             
             for i in range(X.shape[0]):
-                # 计算Z-score
+                # Calculate Z-score
                 mean_val = np.mean(X[i, :])
                 std_val = np.std(X[i, :])
                 if std_val > 0:
@@ -79,7 +79,7 @@ class rank:
                 
                 rank_exp[i, :] = z_scores
                 
-                # 排序后的表达值
+                # Sorted expression values
                 sorted_indices = np.argsort(X[i, :])
                 sort_exp[i, :] = X[i, sorted_indices]
                 
@@ -91,24 +91,24 @@ class rank:
     @staticmethod
     def expToRank_sparse(nadata, method: str = "rank") -> Tuple[np.ndarray, np.ndarray]:
         """
-        稀疏矩阵版本的排名转换
+        Sparse matrix version of ranking conversion
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含表达矩阵的nadata对象
+        nadata : nadata object
+            nadata object containing expression matrix
         method : str
-            排名方法：'rank', 'percentile', 'zscore'
+            Ranking method: 'rank', 'percentile', 'zscore'
             
         Returns:
         --------
         Tuple[np.ndarray, np.ndarray]
-            (rank_exp, sort_exp) 排名矩阵和排序矩阵
+            (rank_exp, sort_exp) ranking matrix and sorted matrix
         """
         if nadata.X is None:
             raise ValueError("Expression matrix X is None")
         
-        # 转换为密集矩阵
+        # Convert to dense matrix
         if hasattr(nadata.X, 'toarray'):
             X = nadata.X.toarray()
         else:
@@ -119,21 +119,21 @@ class rank:
     @staticmethod
     def survival_rank(nadata, time_col: str = "time", event_col: str = "event") -> Tuple[np.ndarray, np.ndarray]:
         """
-        生存分析排名
+        Survival analysis ranking
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         time_col : str
-            时间列名
+            Time column name
         event_col : str
-            事件列名
+            Event column name
             
         Returns:
         --------
         Tuple[np.ndarray, np.ndarray]
-            (rank_exp, sort_exp) 排名矩阵和排序矩阵
+            (rank_exp, sort_exp) ranking matrix and sorted matrix
         """
         if nadata.X is None or nadata.Meta is None:
             raise ValueError("Expression matrix X or Meta data is None")
@@ -145,19 +145,19 @@ class rank:
         times = nadata.Meta[time_col].values
         events = nadata.Meta[event_col].values
         
-        # 计算生存排名
+        # Calculate survival ranking
         rank_exp = np.zeros_like(X)
         sort_exp = np.zeros_like(X)
         
         for i in range(X.shape[0]):
-            # 对每个基因计算生存排名
+            # Calculate survival ranking for each gene
             gene_exp = X[i, :]
             
-            # 按表达值排序
+            # Sort by expression values
             sorted_indices = np.argsort(gene_exp)
             sort_exp[i, :] = gene_exp[sorted_indices]
             
-            # 计算生存排名
+            # Calculate survival ranking
             survival_ranks = _calculate_survival_ranks(times, events, sorted_indices)
             rank_exp[i, sorted_indices] = survival_ranks
         
@@ -166,21 +166,21 @@ class rank:
     @staticmethod
     def correlation_rank(nadata, target_col: str = "target", method: str = "pearson") -> Tuple[np.ndarray, np.ndarray]:
         """
-        基于相关性的排名
+        Correlation-based ranking
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         target_col : str
-            目标变量列名
+            Target variable column name
         method : str
-            相关性方法：'pearson', 'spearman', 'kendall'
+            Correlation method: 'pearson', 'spearman', 'kendall'
             
         Returns:
         --------
         Tuple[np.ndarray, np.ndarray]
-            (rank_exp, sort_exp) 排名矩阵和排序矩阵
+            (rank_exp, sort_exp) ranking matrix and sorted matrix
         """
         if nadata.X is None or nadata.Meta is None:
             raise ValueError("Expression matrix X or Meta data is None")

@@ -1,6 +1,6 @@
 """
-数据验证模块
-包含数据完整性检查、数据一致性验证、格式验证等功能
+Data Validation Module
+Contains data integrity checks, data consistency validation, format validation and other functions
 """
 
 import numpy as np
@@ -11,23 +11,23 @@ import warnings
 
 class validation:
     """
-    数据验证类，提供各种验证方法
+    Data validation class, provides various validation methods
     """
     
     @staticmethod
     def check_data_integrity(nadata) -> Dict[str, Any]:
         """
-        检查数据完整性
+        Check data integrity
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
             
         Returns:
         --------
         Dict[str, Any]
-            完整性检查结果
+            Integrity check results
         """
         results = {
             'is_valid': True,
@@ -36,23 +36,23 @@ class validation:
             'summary': {}
         }
         
-        # 检查表达矩阵
+        # Check expression matrix
         if nadata.X is None:
             results['errors'].append("Expression matrix X is None")
             results['is_valid'] = False
         else:
-            # 检查NaN值
+            # Check NaN values
             nan_count = np.isnan(nadata.X).sum()
             if nan_count > 0:
                 results['warnings'].append(f"Found {nan_count} NaN values in expression matrix")
             
-            # 检查无穷值
+            # Check infinite values
             inf_count = np.isinf(nadata.X).sum()
             if inf_count > 0:
                 results['errors'].append(f"Found {inf_count} infinite values in expression matrix")
                 results['is_valid'] = False
             
-            # 检查负值
+            # Check negative values
             neg_count = (nadata.X < 0).sum()
             if neg_count > 0:
                 results['warnings'].append(f"Found {neg_count} negative values in expression matrix")
@@ -64,7 +64,7 @@ class validation:
                 'neg_count': neg_count
             }
         
-        # 检查表型数据
+        # Check phenotype data
         if nadata.Meta is not None:
             meta_shape = nadata.Meta.shape
             meta_nan_count = nadata.Meta.isnull().sum().sum()
@@ -78,7 +78,7 @@ class validation:
                 'columns': list(nadata.Meta.columns)
             }
         
-        # 检查基因数据
+        # Check gene data
         if nadata.Var is not None:
             var_shape = nadata.Var.shape
             var_nan_count = nadata.Var.isnull().sum().sum()
@@ -92,7 +92,7 @@ class validation:
                 'columns': list(nadata.Var.columns)
             }
         
-        # 检查先验知识
+        # Check prior knowledge
         if nadata.Prior is not None:
             prior_shape = nadata.Prior.shape
             prior_nan_count = np.isnan(nadata.Prior).sum()
@@ -111,17 +111,17 @@ class validation:
     @staticmethod
     def check_data_consistency(nadata) -> Dict[str, Any]:
         """
-        检查数据一致性
+        Check data consistency
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
             
         Returns:
         --------
         Dict[str, Any]
-            一致性检查结果
+            Consistency check results
         """
         results = {
             'is_consistent': True,
@@ -130,11 +130,11 @@ class validation:
             'summary': {}
         }
         
-        # 检查维度一致性
+        # Check dimension consistency
         if nadata.X is not None:
             n_genes, n_samples = nadata.X.shape
             
-            # 检查基因数据维度
+            # Check gene data dimensions
             if nadata.Var is not None:
                 if len(nadata.Var) != n_genes:
                     results['errors'].append(f"Gene data dimension mismatch: {len(nadata.Var)} vs {n_genes}")
@@ -142,7 +142,7 @@ class validation:
                 else:
                     results['summary']['gene_consistency'] = "OK"
             
-            # 检查表型数据维度
+            # Check phenotype data dimensions
             if nadata.Meta is not None:
                 if len(nadata.Meta) != n_samples:
                     results['errors'].append(f"Phenotype data dimension mismatch: {len(nadata.Meta)} vs {n_samples}")
@@ -150,7 +150,7 @@ class validation:
                 else:
                     results['summary']['phenotype_consistency'] = "OK"
             
-            # 检查先验知识维度
+            # Check prior knowledge dimensions
             if nadata.Prior is not None:
                 prior_genes, prior_pathways = nadata.Prior.shape
                 if prior_genes != n_genes:
@@ -164,7 +164,7 @@ class validation:
                 'samples': n_samples
             }
         
-        # 检查基因名称一致性
+        # Check gene name consistency
         if nadata.Var is not None and nadata.X is not None:
             if 'gene_name' in nadata.Var.columns:
                 gene_names = nadata.Var['gene_name'].values
@@ -176,17 +176,17 @@ class validation:
     @staticmethod
     def validate_format(nadata) -> Dict[str, Any]:
         """
-        验证数据格式
+        Validate data format
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
             
         Returns:
         --------
         Dict[str, Any]
-            格式验证结果
+            Format validation results
         """
         results = {
             'is_valid_format': True,
@@ -195,7 +195,7 @@ class validation:
             'summary': {}
         }
         
-        # 验证表达矩阵格式
+        # Validate expression matrix format
         if nadata.X is not None:
             if not isinstance(nadata.X, (np.ndarray, pd.DataFrame)):
                 results['errors'].append("Expression matrix must be numpy array or pandas DataFrame")
@@ -207,7 +207,7 @@ class validation:
             
             results['summary']['expression_format'] = "OK"
         
-        # 验证表型数据格式
+        # Validate phenotype data format
         if nadata.Meta is not None:
             if not isinstance(nadata.Meta, pd.DataFrame):
                 results['errors'].append("Phenotype data must be pandas DataFrame")
@@ -215,7 +215,7 @@ class validation:
             else:
                 results['summary']['phenotype_format'] = "OK"
         
-        # 验证基因数据格式
+        # Validate gene data format
         if nadata.Var is not None:
             if not isinstance(nadata.Var, pd.DataFrame):
                 results['errors'].append("Gene data must be pandas DataFrame")
@@ -223,7 +223,7 @@ class validation:
             else:
                 results['summary']['gene_format'] = "OK"
         
-        # 验证先验知识格式
+        # Validate prior knowledge format
         if nadata.Prior is not None:
             if not isinstance(nadata.Prior, (np.ndarray, pd.DataFrame)):
                 results['errors'].append("Prior knowledge must be numpy array or pandas DataFrame")
@@ -236,17 +236,17 @@ class validation:
     @staticmethod
     def check_data_quality(nadata) -> Dict[str, Any]:
         """
-        检查数据质量
+        Check data quality
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
             
         Returns:
         --------
         Dict[str, Any]
-            质量检查结果
+            Quality check results
         """
         results = {
             'quality_score': 1.0,
@@ -262,7 +262,7 @@ class validation:
         
         X = nadata.X
         
-        # 检查数据稀疏性
+        # Check data sparsity
         zero_count = (X == 0).sum()
         total_elements = X.size
         sparsity = zero_count / total_elements
@@ -274,13 +274,13 @@ class validation:
             results['warnings'].append(f"Data is moderately sparse ({sparsity:.2%} zeros)")
             results['quality_score'] *= 0.9
         
-        # 检查数据范围
+        # Check data range
         data_range = np.ptp(X)
         if data_range < 1e-6:
             results['issues'].append("Data has very small range")
             results['quality_score'] *= 0.7
         
-        # 检查异常值
+        # Check outliers
         q1 = np.percentile(X, 25)
         q3 = np.percentile(X, 75)
         iqr = q3 - q1
@@ -292,7 +292,7 @@ class validation:
             results['issues'].append(f"High proportion of outliers ({outlier_ratio:.2%})")
             results['quality_score'] *= 0.8
         
-        # 检查基因表达分布
+        # Check gene expression distribution
         gene_means = np.mean(X, axis=1)
         gene_vars = np.var(X, axis=1)
         
@@ -308,7 +308,7 @@ class validation:
             'low_variance_genes': low_variance_genes
         }
         
-        # 生成建议
+        # Generate recommendations
         if sparsity > 0.7:
             results['recommendations'].append("Consider using sparse matrix format")
         
@@ -323,17 +323,17 @@ class validation:
     @staticmethod
     def comprehensive_validation(nadata) -> Dict[str, Any]:
         """
-        综合数据验证
+        Comprehensive data validation
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
             
         Returns:
         --------
         Dict[str, Any]
-            综合验证结果
+            Comprehensive validation results
         """
         results = {
             'overall_valid': True,
@@ -344,7 +344,7 @@ class validation:
             'summary': {}
         }
         
-        # 汇总结果
+        # Summarize results
         if not results['integrity_check']['is_valid']:
             results['overall_valid'] = False
         
@@ -354,11 +354,11 @@ class validation:
         if not results['format_check']['is_valid_format']:
             results['overall_valid'] = False
         
-        # 计算总体质量分数
+        # Calculate overall quality score
         quality_score = results['quality_check']['quality_score']
         results['summary']['overall_quality_score'] = quality_score
         
-        # 生成总体建议
+        # Generate overall recommendations
         all_recommendations = []
         all_recommendations.extend(results['integrity_check'].get('warnings', []))
         all_recommendations.extend(results['consistency_check'].get('warnings', []))

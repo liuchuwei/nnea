@@ -1,6 +1,6 @@
 """
-基因集富集分析模块
-实现类似clusterProfiler的enricher功能
+Gene Set Enrichment Analysis Module
+Implements functionality similar to clusterProfiler's enricher
 """
 
 import numpy as np
@@ -14,17 +14,17 @@ logger = logging.getLogger(__name__)
 
 def load_gmt_file(gmt_path: str) -> Dict[str, List[str]]:
     """
-    加载GMT格式的基因集文件
+    Load GMT format gene set file
     
     Parameters:
     -----------
     gmt_path : str
-        GMT文件路径
+        GMT file path
         
     Returns:
     --------
     Dict[str, List[str]]
-        基因集字典，键为基因集名称，值为基因列表
+        Gene set dictionary, keys are gene set names, values are gene lists
     """
     genesets = {}
     
@@ -40,11 +40,11 @@ def load_gmt_file(gmt_path: str) -> Dict[str, List[str]]:
                 
                 genesets[pathway_name] = pathway_genes
         
-        logger.info(f"成功加载 {len(genesets)} 个基因集")
+        logger.info(f"Successfully loaded {len(genesets)} gene sets")
         return genesets
         
     except Exception as e:
-        logger.error(f"加载GMT文件失败: {e}")
+        logger.error(f"Failed to load GMT file: {e}")
         return {}
 
 
@@ -54,105 +54,105 @@ def enricher(gene: List[str],
              minGSSize: int = 10,
              maxGSSize: int = 500) -> pd.DataFrame:
     """
-    基因集富集分析，类似clusterProfiler的enricher函数
+    Gene set enrichment analysis, similar to clusterProfiler's enricher function
     
     Parameters:
     -----------
     gene : List[str]
-        待分析的基因列表
+        List of genes to analyze
     TERM2GENE : Dict[str, List[str]]
-        基因集字典，键为基因集名称，值为基因列表
+        Gene set dictionary, keys are gene set names, values are gene lists
     pvalueCutoff : float
-        p值阈值，默认0.05
+        p-value threshold, default 0.05
     minGSSize : int
-        最小基因集大小，默认10
+        Minimum gene set size, default 10
     maxGSSize : int
-        最大基因集大小，默认500
+        Maximum gene set size, default 500
         
     Returns:
     --------
     pd.DataFrame
-        富集分析结果，包含以下列：
-        - ID: 基因集ID
-        - Description: 基因集描述
-        - GeneRatio: 基因比例
-        - BgRatio: 背景比例
-        - pvalue: p值
-        - p.adjust: 校正后的p值
-        - qvalue: q值
-        - geneID: 富集的基因ID
-        - Count: 富集基因数量
+        Enrichment analysis results, containing the following columns:
+        - ID: Gene set ID
+        - Description: Gene set description
+        - GeneRatio: Gene ratio
+        - BgRatio: Background ratio
+        - pvalue: p-value
+        - p.adjust: Adjusted p-value
+        - qvalue: q-value
+        - geneID: Enriched gene IDs
+        - Count: Number of enriched genes
     """
     if not gene or not TERM2GENE:
-        logger.warning("基因列表或基因集为空")
+        logger.warning("Gene list or gene sets are empty")
         return pd.DataFrame()
     
-    # 获取背景基因集（所有基因集的并集）
+    # Get background gene set (union of all gene sets)
     background_genes = set()
     for genes in TERM2GENE.values():
         background_genes.update(genes)
     background_genes = list(background_genes)
     
-    # 过滤基因集大小
+    # Filter gene set sizes
     filtered_TERM2GENE = {}
     for term, genes in TERM2GENE.items():
         if minGSSize <= len(genes) <= maxGSSize:
             filtered_TERM2GENE[term] = genes
     
-    # logger.info(f"过滤后基因集数量: {len(filtered_TERM2GENE)}")
+    # logger.info(f"Number of gene sets after filtering: {len(filtered_TERM2GENE)}")
     
-    # 进行超几何检验
+    # Perform hypergeometric test
     results = []
     
     for term, genes in filtered_TERM2GENE.items():
-        # 计算交集
+        # Calculate intersection
         intersection = set(gene) & set(genes)
-        k = len(intersection)  # 交集大小
+        k = len(intersection)  # Intersection size
         
         if k == 0:
             continue
         
-        # 超几何检验参数
-        N = len(background_genes)  # 背景基因总数
-        K = len(genes)  # 基因集大小
-        n = len(gene)  # 输入基因数量
+        # Hypergeometric test parameters
+        N = len(background_genes)  # Total background genes
+        K = len(genes)  # Gene set size
+        n = len(gene)  # Input gene count
         
-        # 计算p值
+        # Calculate p-value
         pvalue = hypergeom.sf(k-1, N, K, n)
         
-        # 计算基因比例
+        # Calculate gene ratios
         gene_ratio = f"{k}/{n}"
         bg_ratio = f"{K}/{N}"
         
-        # 富集的基因ID
+        # Enriched gene IDs
         geneID = "/".join(intersection)
         
         results.append({
             'ID': term,
-            'Description': term,  # 可以添加描述信息
+            'Description': term,  # Can add description information
             'GeneRatio': gene_ratio,
             'BgRatio': bg_ratio,
             'pvalue': pvalue,
-            'p.adjust': pvalue,  # 暂时不进行多重检验校正
-            'qvalue': pvalue,    # 暂时不进行FDR校正
+            'p.adjust': pvalue,  # Temporarily no multiple testing correction
+            'qvalue': pvalue,    # Temporarily no FDR correction
             'geneID': geneID,
             'Count': k
         })
     
     if not results:
-        logger.warning("没有找到显著富集的基因集")
+        logger.warning("No significantly enriched gene sets found")
         return pd.DataFrame()
     
-    # 转换为DataFrame
+    # Convert to DataFrame
     result_df = pd.DataFrame(results)
     
-    # 按p值排序
+    # Sort by p-value
     result_df = result_df.sort_values('pvalue')
     
-    # # 过滤p值
+    # # Filter p-values
     # filter_result_df = result_df[result_df['pvalue'] <= pvalueCutoff]
     #
-    # # logger.info(f"找到 {len(filter_result_df)} 个显著富集的基因集")
+    # # logger.info(f"Found {len(filter_result_df)} significantly enriched gene sets")
     #
     return result_df
 
@@ -164,58 +164,58 @@ def refine_genesets(geneset_assignments: np.ndarray,
                    max_set_size: int,
                    geneset_threshold: float = 1e-5) -> List[List[str]]:
     """
-    根据基因集分配和重要性，精炼基因集
-    使用TrainableGeneSetLayer中的geneset_threshold作为阈值
+    Refine gene sets based on gene set assignments and importance
+    Use geneset_threshold from TrainableGeneSetLayer as threshold
     
     Parameters:
     -----------
     geneset_assignments : np.ndarray
-        基因集分配矩阵，形状为 (num_genesets, num_genes)
+        Gene set assignment matrix, shape (num_genesets, num_genes)
     geneset_importance : np.ndarray
-        基因集重要性分数，形状为 (num_genesets,)
+        Gene set importance scores, shape (num_genesets,)
     gene_names : List[str]
-        基因名称列表
+        List of gene names
     min_set_size : int
-        最小基因集大小
+        Minimum gene set size
     max_set_size : int
-        最大基因集大小
+        Maximum gene set size
     geneset_threshold : float
-        基因集阈值，来自TrainableGeneSetLayer
+        Gene set threshold from TrainableGeneSetLayer
         
     Returns:
     --------
     List[List[str]]
-        精炼后的基因集列表
+        Refined gene set list
     """
     if geneset_assignments.size == 0:
         return []
     
     refined_genesets = []
     
-    # 使用固定的geneset_threshold
+    # Use fixed geneset_threshold
     for j in range(geneset_assignments.shape[0]):
         gene_assignments = geneset_assignments[j]
         
-        # 使用geneset_threshold选择基因
+        # Use geneset_threshold to select genes
         selected_indices = np.where(gene_assignments >= geneset_threshold)[0]
         selected_genes_list = [gene_names[idx] for idx in selected_indices]
         
-        # 确保基因集大小在指定范围内
+        # Ensure gene set size is within specified range
         if len(selected_genes_list) > max_set_size:
-            # 如果超过最大大小，按重要性排序取前max_set_size个
+            # If exceeding maximum size, sort by importance and take top max_set_size
             gene_importance_selected = gene_assignments[selected_indices]
             sorted_indices = np.argsort(gene_importance_selected)[::-1]
             selected_indices = selected_indices[sorted_indices[:max_set_size]]
             selected_genes_list = [gene_names[idx] for idx in selected_indices]
         
-        # 只保留满足最小大小要求的基因集
+        # Only keep gene sets that meet minimum size requirement
         if len(selected_genes_list) >= min_set_size:
             refined_genesets.append(selected_genes_list)
-            logger.debug(f"基因集 {j+1}: {len(selected_genes_list)} 个基因")
+            logger.debug(f"Gene set {j+1}: {len(selected_genes_list)} genes")
         else:
-            logger.warning(f"基因集 {j+1} 大小 ({len(selected_genes_list)}) 小于最小要求 ({min_set_size})")
+            logger.warning(f"Gene set {j+1} size ({len(selected_genes_list)}) is less than minimum requirement ({min_set_size})")
     
-    logger.info(f"使用阈值 {geneset_threshold:.6f} 精炼后基因集数量: {len(refined_genesets)}")
+    logger.info(f"Number of gene sets after refinement with threshold {geneset_threshold:.6f}: {len(refined_genesets)}")
     return refined_genesets
 
 
@@ -223,27 +223,27 @@ def annotate_genesets(genesets: List[List[str]],
                      gmt_path: str,
                      pvalueCutoff: float = 0.05) -> Dict[str, Any]:
     """
-    对基因集进行注释
+    Annotate gene sets
     
     Parameters:
     -----------
     genesets : List[List[str]]
-        基因集列表
+        List of gene sets
     gmt_path : str
-        GMT文件路径
+        GMT file path
     pvalueCutoff : float
-        p值阈值
+        p-value threshold
         
     Returns:
     --------
     Dict[str, Any]
-        注释结果，使用enrichment DataFrame的ID列作为key
+        Annotation results, using enrichment DataFrame's ID column as key
     """
-    # 加载基因集数据库
+    # Load gene set database
     term2gene = load_gmt_file(gmt_path)
     
     if not term2gene:
-        logger.warning("无法加载基因集数据库")
+        logger.warning("Unable to load gene set database")
         return {}
     
     annotation_results = {}
@@ -252,14 +252,14 @@ def annotate_genesets(genesets: List[List[str]],
         if not geneset:
             continue
             
-        # 进行富集分析
+        # Perform enrichment analysis
         enrich_result = enricher(
             gene=geneset,
             TERM2GENE=term2gene,
             pvalueCutoff=pvalueCutoff
         )
         
-        # 使用enrichment DataFrame的ID列作为key
+        # Use enrichment DataFrame's ID column as key
         if not enrich_result.empty:
             for _, row in enrich_result.iterrows():
                 pathway_id = row['ID']
@@ -269,12 +269,12 @@ def annotate_genesets(genesets: List[List[str]],
                     'geneset_index': i + 1
                 }
         else:
-            # 如果没有富集结果，使用默认key
+            # If no enrichment results, use default key
             annotation_results[f"geneset_{i+1}"] = {
                 'genes': geneset,
                 'enrichment': enrich_result,
                 'geneset_index': i + 1
             }
     
-    logger.info(f"完成 {len(annotation_results)} 个基因集的注释")
+    logger.info(f"Completed annotation of {len(annotation_results)} gene sets")
     return annotation_results

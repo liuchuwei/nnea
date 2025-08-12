@@ -1,6 +1,6 @@
 """
-配置设置模块
-提供配置文件的加载、保存和验证功能
+Configuration Settings Module
+Provides configuration file loading, saving and validation functionality
 """
 
 import os
@@ -13,16 +13,16 @@ from pathlib import Path
 
 def load_config(filepath: str) -> Dict[str, Any]:
     """
-    加载配置文件
+    Load configuration file
     
     Args:
-        filepath: 配置文件路径
+        filepath: Configuration file path
     
     Returns:
-        配置字典
+        Configuration dictionary
     """
     if not os.path.exists(filepath):
-        raise FileNotFoundError(f"配置文件不存在: {filepath}")
+        raise FileNotFoundError(f"Configuration file does not exist: {filepath}")
     
     file_ext = Path(filepath).suffix.lower()
     
@@ -35,17 +35,17 @@ def load_config(filepath: str) -> Dict[str, Any]:
         with open(filepath, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
     else:
-        raise ValueError(f"不支持的配置文件格式: {file_ext}")
+        raise ValueError(f"Unsupported configuration file format: {file_ext}")
 
 
 def save_config(config: Dict[str, Any], filepath: str, format: str = "json") -> None:
     """
-    保存配置文件
+    Save configuration file
     
     Args:
-        config: 配置字典
-        filepath: 文件路径
-        format: 保存格式 ("json", "toml", "yaml")
+        config: Configuration dictionary
+        filepath: File path
+        format: Save format ("json", "toml", "yaml")
     """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     
@@ -59,19 +59,19 @@ def save_config(config: Dict[str, Any], filepath: str, format: str = "json") -> 
         with open(filepath, 'w', encoding='utf-8') as f:
             yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
     else:
-        raise ValueError(f"不支持的格式: {format}")
+        raise ValueError(f"Unsupported format: {format}")
 
 
 def update_config(config: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
     """
-    更新配置
+    Update configuration
     
     Args:
-        config: 原始配置
-        updates: 更新内容
+        config: Original configuration
+        updates: Update content
     
     Returns:
-        更新后的配置
+        Updated configuration
     """
     def deep_update(d: Dict[str, Any], u: Dict[str, Any]) -> Dict[str, Any]:
         for k, v in u.items():
@@ -86,47 +86,47 @@ def update_config(config: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, 
 
 def validate_config(config: Dict[str, Any], required_keys: list = None) -> bool:
     """
-    验证配置有效性
+    Validate configuration validity
     
     Args:
-        config: 配置字典
-        required_keys: 必需的键列表
+        config: Configuration dictionary
+        required_keys: List of required keys
     
     Returns:
-        配置是否有效
+        Whether the configuration is valid
     """
     if required_keys:
         missing_keys = set(required_keys) - set(config.keys())
         if missing_keys:
-            raise ValueError(f"缺少必需的配置项: {missing_keys}")
+            raise ValueError(f"Missing required configuration items: {missing_keys}")
     
-    # 验证数据类型
+    # Validate data types
     if 'model' in config:
         if not isinstance(config['model'], dict):
-            raise ValueError("model配置必须是字典类型")
+            raise ValueError("model configuration must be a dictionary type")
     
     if 'data' in config:
         if not isinstance(config['data'], dict):
-            raise ValueError("data配置必须是字典类型")
+            raise ValueError("data configuration must be a dictionary type")
     
     if 'training' in config:
         if not isinstance(config['training'], dict):
-            raise ValueError("training配置必须是字典类型")
+            raise ValueError("training configuration must be a dictionary type")
     
     return True
 
 
 def get_config_value(config: Dict[str, Any], key_path: str, default: Any = None) -> Any:
     """
-    获取嵌套配置值
+    Get nested configuration value
     
     Args:
-        config: 配置字典
-        key_path: 键路径 (用.分隔)
-        default: 默认值
+        config: Configuration dictionary
+        key_path: Key path (separated by .)
+        default: Default value
     
     Returns:
-        配置值
+        Configuration value
     """
     keys = key_path.split('.')
     value = config
@@ -142,15 +142,15 @@ def get_config_value(config: Dict[str, Any], key_path: str, default: Any = None)
 
 def set_config_value(config: Dict[str, Any], key_path: str, value: Any) -> Dict[str, Any]:
     """
-    设置嵌套配置值
+    Set nested configuration value
     
     Args:
-        config: 配置字典
-        key_path: 键路径 (用.分隔)
-        value: 要设置的值
+        config: Configuration dictionary
+        key_path: Key path (separated by .)
+        value: Value to set
     
     Returns:
-        更新后的配置
+        Updated configuration
     """
     keys = key_path.split('.')
     config_copy = config.copy()
@@ -167,13 +167,13 @@ def set_config_value(config: Dict[str, Any], key_path: str, value: Any) -> Dict[
 
 def merge_configs(configs: list) -> Dict[str, Any]:
     """
-    合并多个配置
+    Merge multiple configurations
     
     Args:
-        configs: 配置列表
+        configs: Configuration list
     
     Returns:
-        合并后的配置
+        Merged configuration
     """
     merged = {}
     for config in configs:
@@ -183,10 +183,10 @@ def merge_configs(configs: list) -> Dict[str, Any]:
 
 def create_config_template() -> Dict[str, Any]:
     """
-    创建配置模板
+    Create configuration template
     
     Returns:
-        配置模板
+        Configuration template
     """
     return {
         "model": {

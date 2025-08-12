@@ -1,6 +1,6 @@
 """
-NNEA模型模块
-包含模型构建、训练、评估和解释功能
+NNEA Model Module
+Contains model building, training, evaluation and interpretation functionality
 """
 
 from .models import (

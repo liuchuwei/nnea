@@ -1,8 +1,8 @@
 """
-NNEA (Neural Network with Explainable Architecture) 包
+NNEA (Neural Network with Explainable Architecture) Package
 
-一个集成了model、module、utils、config功能的生物学可解释性神经网络包，
-专门用于转录组学研究。该包提供了从数据加载、预处理、模型训练到结果解释的完整流程。
+A comprehensive biological interpretable neural network package that integrates model, module, utils, and config functionality,
+specifically designed for transcriptomics research. This package provides a complete workflow from data loading, preprocessing, model training to result interpretation.
 """
 
 from . import datasets
@@ -12,19 +12,19 @@ from . import model
 from . import plot
 from . import utils
 from . import config
-# from . import baseline_models  # 暂时注释掉，因为模块不存在
+# from . import baseline_models  # Temporarily commented out because the module doesn't exist
 from . import logging_utils
 
-# 主要接口函数
+# Main interface functions
 from .io import CreateNNEA, nadata
 from .model.models import build, train, eval, explain, save_model, load_project, get_summary, train_classification_models, compare_models, print_model_structure, predict
-# from .model.classification_models import (  # 暂时注释掉
+# from .model.classification_models import (  # Temporarily commented out
 #     build_classification_models, train_classification_models as train_clf_models, 
 #     ClassificationModelComparison
 # )
-# from .baseline_models import BaselineModelComparison  # 暂时注释掉
-# from .plot.simple_plots import training_curve, feature_importance, geneset_network, model_comparison  # 暂时注释掉
-# from .cross_validation import (  # 暂时注释掉
+# from .baseline_models import BaselineModelComparison  # Temporarily commented out
+# from .plot.simple_plots import training_curve, feature_importance, geneset_network, model_comparison  # Temporarily commented out
+# from .cross_validation import (  # Temporarily commented out
 #     cross_validation_hyperparameter_search,
 #     train_final_model_with_cv,
 #     run_cv_experiment,
@@ -35,15 +35,15 @@ from .model.models import build, train, eval, explain, save_model, load_project,
 #     run_multi_model_cv_experiment
 # )
 
-# 数据预处理功能
+# Data preprocessing functionality
 from .data_factory import pp
-# 特征选择功能
+# Feature selection functionality
 from .data_factory.feature_selection import fs
 
-# 工具函数
+# Utility functions
 from .utils.helpers import set_global_seed, get_seed_from_config, ensure_reproducibility
 
-# 日志相关
+# Logging related
 from .logging_utils import setup_logging, get_logger, logger
 
 __version__ = "0.1.0"
@@ -62,17 +62,17 @@ __all__ = [
     "get_summary",
     "print_model_structure",
     "predict",
-    # "build_classification_models",  # 暂时注释掉
+    # "build_classification_models",  # Temporarily commented out
     # "train_classification_models",
     # "train_clf_models",
     "compare_models",
-    # "ClassificationModelComparison",  # 暂时注释掉
-    # "BaselineModelComparison",  # 暂时注释掉
-    # "training_curve",  # 暂时注释掉
+    # "ClassificationModelComparison",  # Temporarily commented out
+    # "BaselineModelComparison",  # Temporarily commented out
+    # "training_curve",  # Temporarily commented out
     # "feature_importance",
     # "geneset_network",
     # "model_comparison",
-    # "cross_validation_hyperparameter_search",  # 暂时注释掉
+    # "cross_validation_hyperparameter_search",  # Temporarily commented out
     # "train_final_model_with_cv",
     # "run_cv_experiment",
     # "save_cv_results",

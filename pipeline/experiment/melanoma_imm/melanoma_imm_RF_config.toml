@@ -1,0 +1,60 @@
+# RandomForestClassifier model configuration file
+# Global configuration
+[global]
+    model = "random_forest"
+    device = "auto"  # Auto-detect GPU/CPU
+    seed = 42
+    inputfl = "./datasets/tumor_imm/melanoma_immunotherapy.pkl"
+    outputfl = "melanoma_imm_RF.pkl"
+    outdir = "experiment/melanoma_imm_RF"
+
+# Dataset configuration
+[dataset]
+    test_size = 0.2
+    val_size = 0.2
+    random_state = 42
+
+# RandomForestClassifier model configuration
+[random_forest]
+    # Basic parameters
+    n_estimators = [50, 100, 200]  # Number of trees
+    criterion = ["gini", "entropy", "log_loss"]  # Split criterion
+    max_depth = [5, 10, 20, 30]  # Maximum depth
+    min_samples_split = [2, 5, 10]  # Minimum samples required for split
+    min_samples_leaf = [1, 2, 4]  # Minimum samples at leaf node
+    max_features = ["sqrt", "log2"]  # Maximum number of features
+
+    # Other optional parameters
+    random_state = 42  # Random seed
+    class_weight = "balanced"  # Class weight
+    n_jobs = 8  # Number of parallel jobs
+
+    # Cross-validation configuration
+    cv_folds = 5  # Cross-validation folds
+    cv_scoring = "roc_auc"  # Evaluation metric
+
+    # Feature selection configuration - RF usually doesn't need standardization, but needs feature selection
+    feature_selection = true
+    selection_method = "random_forest"
+    n_features = 30
+    selection_alpha = 0.01
+
+    # Data preprocessing configuration - RF is not sensitive to feature scale, but needs to handle missing values
+    [random_forest.preprocessing]
+        fill_na = true
+        fill_method = "mean"
+        scale_data = false  # RF doesn't need standardization
+        scale_method = "standard"
+
+# Training configuration
+[training]
+    verbose = 1
+    save_model = true
+    save_format = "pickle"
+    save_data = true
+
+# Evaluation configuration
+[evaluation]
+    metrics = ["roc_auc", "classification_report"]
+    save_predictions = true
+    save_probabilities = true

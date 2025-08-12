@@ -2,40 +2,40 @@ import os
 import torch
 import logging
 from typing import Dict, Any, Optional
-# 避免循环导入，使用类型注解
+# Avoid circular imports, use type annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ._nadata import nadata
 
-# 获取logger
+# Get logger
 logger = logging.getLogger(__name__)
 
 
 def save_project(nadata_obj, filepath: str, save_data: bool = True) -> None:
     """
-    保存nadata项目到文件
+    Save nadata project to file
     
     Parameters:
     -----------
     nadata_obj : nadata
-        要保存的nadata对象
+        nadata object to save
     filepath : str
-        保存路径
+        Save path
     save_data : bool
-        是否保存数据，如果为False只保存模型和配置
+        Whether to save data, if False only save model and configuration
     """
-    # 确保目录存在
+    # Ensure directory exists
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     
-    # 准备保存的数据
+    # Prepare data to save
     checkpoint = {}
     
-    # 保存配置（从Model容器获取）
+    # Save configuration (get from Model container)
     config = nadata_obj.Model.get_config()
     if config:
         checkpoint['config'] = config
     
-    # 保存核心数据（可选）
+    # Save core data (optional)
     if save_data:
         if nadata_obj.X is not None:
             checkpoint['X'] = nadata_obj.X
@@ -46,71 +46,71 @@ def save_project(nadata_obj, filepath: str, save_data: bool = True) -> None:
         if nadata_obj.Prior is not None:
             checkpoint['Prior'] = nadata_obj.Prior
     
-    # 保存模型信息（从Model容器获取）
+    # Save model information (get from Model container)
     if nadata_obj.Model:
-        # 保存所有模型的状态字典
+        # Save state dictionaries of all models
         model_states = {}
         for model_name, model in nadata_obj.Model.models.items():
             if hasattr(model, 'state_dict'):
                 model_states[model_name] = model.state_dict()
             elif hasattr(model, 'get_params'):
-                # 对于sklearn模型，保存参数
+                # For sklearn models, save parameters
                 model_states[model_name] = model.get_params()
         
         if model_states:
             checkpoint['model_states'] = model_states
         
-        # 训练历史
+        # Training history
         train_results = nadata_obj.Model.get_train_results()
         if train_results:
             checkpoint['train_results'] = train_results
         
-        # 数据索引
+        # Data indices
         indices = nadata_obj.Model.get_indices()
         if any(indices.values()):
             checkpoint['indices'] = indices
         
-        # 元数据
+        # Metadata
         metadata = nadata_obj.Model.get_metadata()
         if metadata:
             checkpoint['metadata'] = metadata
     
-    # 保存到文件 - 确保兼容性
+    # Save to file - ensure compatibility
     torch.save(checkpoint, filepath, _use_new_zipfile_serialization=False)
     
-    logger.info(f"项目已保存: {filepath}")
-    logger.info(f"保存的数据: {list(checkpoint.keys())}")
+    logger.info(f"Project saved: {filepath}")
+    logger.info(f"Saved data: {list(checkpoint.keys())}")
 
 
 def save_model_only(nadata_obj, filepath: str) -> None:
     """
-    只保存模型，不保存数据
+    Save only model, not data
     
     Parameters:
     -----------
     nadata_obj : nadata
-        要保存的nadata对象
+        nadata object to save
     filepath : str
-        保存路径
+        Save path
     """
     save_project(nadata_obj, filepath, save_data=False)
 
 
 def save_data_only(nadata_obj, filepath: str) -> None:
     """
-    只保存数据，不保存模型
+    Save only data, not model
     
     Parameters:
     -----------
     nadata_obj : nadata
-        要保存的nadata对象
+        nadata object to save
     filepath : str
-        保存路径
+        Save path
     """
-    # 准备保存的数据
+    # Prepare data to save
     checkpoint = {}
     
-    # 保存核心数据
+    # Save core data
     if nadata_obj.X is not None:
         checkpoint['X'] = nadata_obj.X
     if nadata_obj.Meta is not None:
@@ -120,35 +120,35 @@ def save_data_only(nadata_obj, filepath: str) -> None:
     if nadata_obj.Prior is not None:
         checkpoint['Prior'] = nadata_obj.Prior
     
-    # 保存数据索引
+    # Save data indices
     indices = nadata_obj.Model.get_indices()
     if any(indices.values()):
         checkpoint['indices'] = indices
     
-    # 保存到文件
+    # Save to file
     torch.save(checkpoint, filepath, _use_new_zipfile_serialization=False)
     
-    logger.info(f"数据已保存: {filepath}")
+    logger.info(f"Data saved: {filepath}")
 
 
 def save_checkpoint(nadata_obj, filepath: str, epoch: int, 
                    save_data: bool = False, **kwargs) -> None:
     """
-    保存检查点
+    Save checkpoint
     
     Parameters:
     -----------
     nadata_obj : nadata
-        要保存的nadata对象
+        nadata object to save
     filepath : str
-        保存路径
+        Save path
     epoch : int
-        当前epoch
+        Current epoch
     save_data : bool
-        是否保存数据
-    **kwargs : 其他参数
+        Whether to save data
+    **kwargs : Other parameters
     """
-    # 准备检查点数据
+    # Prepare checkpoint data
     checkpoint = {
         'epoch': epoch,
         'config': nadata_obj.Model.get_config(),
@@ -157,7 +157,7 @@ def save_checkpoint(nadata_obj, filepath: str, epoch: int,
         'metadata': nadata_obj.Model.get_metadata()
     }
     
-    # 保存模型状态
+    # Save model states
     model_states = {}
     for model_name, model in nadata_obj.Model.models.items():
         if hasattr(model, 'state_dict'):
@@ -166,7 +166,7 @@ def save_checkpoint(nadata_obj, filepath: str, epoch: int,
     if model_states:
         checkpoint['model_states'] = model_states
     
-    # 保存核心数据（可选）
+    # Save core data (optional)
     if save_data:
         if nadata_obj.X is not None:
             checkpoint['X'] = nadata_obj.X
@@ -177,44 +177,44 @@ def save_checkpoint(nadata_obj, filepath: str, epoch: int,
         if nadata_obj.Prior is not None:
             checkpoint['Prior'] = nadata_obj.Prior
     
-    # 添加额外参数
+    # Add extra parameters
     checkpoint.update(kwargs)
     
-    # 保存到文件
+    # Save to file
     torch.save(checkpoint, filepath, _use_new_zipfile_serialization=False)
     
-    logger.info(f"检查点已保存: {filepath} (epoch {epoch})")
+    logger.info(f"Checkpoint saved: {filepath} (epoch {epoch})")
 
 
 def export_results(nadata_obj, output_dir: str) -> None:
     """
-    导出结果到指定目录
+    Export results to specified directory
     
     Parameters:
     -----------
     nadata_obj : nadata
-        要导出的nadata对象
+        nadata object to export
     output_dir : str
-        输出目录
+        Output directory
     """
-    # 确保输出目录存在
+    # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
-    # 导出训练结果
+    # Export training results
     train_results = nadata_obj.Model.get_train_results()
     if train_results:
         import json
         with open(os.path.join(output_dir, 'train_results.json'), 'w') as f:
             json.dump(train_results, f, indent=2, default=str)
     
-    # 导出配置
+    # Export configuration
     config = nadata_obj.Model.get_config()
     if config:
         import json
         with open(os.path.join(output_dir, 'config.json'), 'w') as f:
             json.dump(config, f, indent=2, default=str)
     
-    # 导出模型比较结果
+    # Export model comparison results
     try:
         from ..model.models import compare_models
         comparison_results = compare_models(nadata_obj, verbose=0)
@@ -223,9 +223,9 @@ def export_results(nadata_obj, output_dir: str) -> None:
                 os.path.join(output_dir, 'model_comparison.csv'), index=False
             )
     except Exception as e:
-        logger.warning(f"导出模型比较结果失败: {e}")
+        logger.warning(f"Failed to export model comparison results: {e}")
     
-    # 导出数据摘要
+    # Export data summary
     try:
         from ..model.models import get_summary
         summary = get_summary(nadata_obj)
@@ -233,6 +233,6 @@ def export_results(nadata_obj, output_dir: str) -> None:
         with open(os.path.join(output_dir, 'summary.json'), 'w') as f:
             json.dump(summary, f, indent=2, default=str)
     except Exception as e:
-        logger.warning(f"导出摘要失败: {e}")
+        logger.warning(f"Failed to export summary: {e}")
     
-    logger.info(f"结果已导出到: {output_dir}") 
+    logger.info(f"Results exported to: {output_dir}") 

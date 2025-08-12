@@ -5,47 +5,47 @@ from datetime import datetime
 
 def setup_logging(level='INFO', log_file=None, experiment_name=None):
     """
-    设置简洁现代风格的日志配置
+    Set up concise modern style logging configuration
     
     Args:
-        level: 日志级别，默认为INFO
-        log_file: 日志文件路径，如果为None则使用默认路径
-        experiment_name: 实验名称，用于生成日志文件名
+        level: Log level, default is INFO
+        log_file: Log file path, if None, use default path
+        experiment_name: Experiment name, used to generate log file name
     """
     fmt = '%(asctime)s | %(levelname)s | %(message)s'
     datefmt = '%H:%M:%S'
     
-    # 如果提供了log_file，使用指定的路径
+    # If log_file is provided, use the specified path
     if log_file is not None:
-        # 确保日志文件的目录存在
+        # Ensure the directory for the log file exists
         log_dir = os.path.dirname(log_file)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
     else:
-        # 创建默认日志目录
+        # Create default log directory
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
         
-        # 生成日志文件名
+        # Generate log file name
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if experiment_name:
             log_file = f"{log_dir}/{experiment_name}_{timestamp}.log"
         else:
             log_file = f"{log_dir}/experiment_{timestamp}.log"
     
-    # 基础配置
+    # Basic configuration
     logging.basicConfig(
         level=getattr(logging, level.upper()),
         format=fmt,
         datefmt=datefmt,
         handlers=[
-            logging.StreamHandler(),  # 控制台输出
-            logging.FileHandler(log_file, mode='w', encoding='utf-8')  # 文件输出
+            logging.StreamHandler(),  # Console output
+            logging.FileHandler(log_file, mode='w', encoding='utf-8')  # File output
         ],
         force=True
     )
     
-    # 彩色日志配置
+    # Colored logs configuration
     coloredlogs.install(
         level=level,
         fmt=fmt,
@@ -67,18 +67,18 @@ def setup_logging(level='INFO', log_file=None, experiment_name=None):
 
 def get_logger(name=None):
     """
-    获取logger实例
+    Get logger instance
     
     Args:
-        name: logger名称，默认为None
+        name: Logger name, default is None
     
     Returns:
-        logger实例
+        Logger instance
     """
     return logging.getLogger(name)
 
-# 自动设置日志配置
+# Automatically set up logging configuration
 setup_logging()
 
-# 获取默认logger
+# Get default logger
 logger = get_logger(__name__)

@@ -1,5 +1,5 @@
 """
-数据工厂模块，包含各类函数，对nadata中的数据进行加工
+Data Factory Module, contains various functions for processing data in nadata
 """
 
 from . import preprocessing
@@ -7,7 +7,7 @@ from . import augmentation
 from . import rank
 from . import validation
 
-# 导入主要功能
+# Import main functionality
 from .preprocessing import pp
 
 __all__ = [
