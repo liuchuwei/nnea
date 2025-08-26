@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import os
 import warnings
-import toml  # For reading toml files
+import toml  # for reading toml files
 
 warnings.filterwarnings('ignore')
 
@@ -29,7 +29,7 @@ print("✅ Global random seed set successfully")
 print("📂 Loading data...")
 try:
     nadata = na.nadata()
-    nadata.load(filepath="./datasets/tumor_imm/melanoma_immunotherapy.pkl")
+    nadata.load(filepath="./datasets/tumor_survival/TCGA_Colon_Cancer_survival.pkl")
     print("✅ Preprocessed nadata object loaded successfully, data shape:", nadata.X.shape)
 except Exception as e:
     print(f"❌ Data loading failed: {e}")
@@ -50,21 +50,19 @@ else:
 # Update X in nadata
 nadata.X = X
 
-# Process labels
-print("🏷️ Processing labels...")
-y = nadata.Meta['response_NR']
-y = y.map({'N': 0, 'R': 1})
-nadata.Meta['target'] = y  # Model uses 'target' by default
-
-# Feature selection
-if nnea_config['dataset']['feature_selection']:
-    nadata = na.fs.apply_feature_selection(
+# Process survival data labels
+print("🏷️ Processing survival data labels...")
+try:
+    nadata = na.pp.process_survival_data(
         nadata,
-        method=nnea_config['dataset']['selection_method'],
-        n_features=nnea_config['dataset']['n_features'],
-        target_col='target',  # Use default target column
+        os_col='OS',
+        os_time_col='OS.time',
+        time_unit='auto'
     )
-
+    print("✅ Survival data processing completed")
+except Exception as e:
+    print(f"❌ Survival data processing failed: {e}")
+    exit(1)
 
 # Data splitting
 print("✂️ Performing data splitting...")
@@ -98,7 +96,7 @@ except Exception as e:
 print("🔧 Building nnea model...")
 try:
     na.build(nadata)
-    print("✅ Model built successfully")
+    print("✅ Model building completed")
 except Exception as e:
     print(f"❌ Model building failed: {e}")
     exit(1)
@@ -112,32 +110,26 @@ try:
 
     if tailor_enabled:
         print(
-            f"✂️ Enabling tailor strategy: tailor_epoch={training_config.get('tailor_epoch', 20)}, tailor_geneset={training_config.get('tailor_geneset', 2)}")
+            f"✂️ Tailor strategy enabled: tailor_epoch={training_config.get('tailor_epoch', 20)}, tailor_geneset={training_config.get('tailor_geneset', 2)}")
+
 
     train_results = na.train(nadata, verbose=2)
     print("✅ Model training completed")
     print(f"📊 Training results: {train_results}")
 
-    # If tailor strategy was used, display pruning information
+    # If tailor strategy is used, display pruning information
     if tailor_enabled and isinstance(train_results, dict) and 'tailor_info' in train_results:
         tailor_info = train_results['tailor_info']
-        print(f"✂️ Tailor strategy information:")
+        print(f"✂️ Cyclic Tailor strategy information:")
         print(f"   - Pruning epoch interval: {tailor_info['tailor_epoch']}")
-        print(f"   - Number of genesets pruned per iteration: {tailor_info['tailor_geneset']}")
+        print(f"   - Geneset count pruned each time: {tailor_info['tailor_geneset']}")
         print(f"   - Total training stages: {tailor_info['total_stages']}")
-        print(f"   - Final number of genesets: {tailor_info['final_geneset_count']}")
-
-        # Display pruning history for each stage
-        if 'tailor_history' in train_results:
-            print(f"   - Pruning history:")
-            for i, history in enumerate(train_results['tailor_history']):
-                print(
-                    f"      Stage {i + 1}: epoch {history['epoch']}, removed genesets {history['removed_genesets']}, number of genesets after {history['num_genesets_after']}")
+        print(f"   - Final geneset count: {tailor_info['final_geneset_count']}")
 
 except Exception as e:
     print(f"❌ Model training failed: {e}")
-    print(f"    Error type: {type(e).__name__}")
-    print(f"    Error details: {str(e)}")
+    print(f"   Error type: {type(e).__name__}")
+    print(f"   Error details: {str(e)}")
 
 # Evaluate model
 print("📈 Evaluating nnea model...")
@@ -154,22 +146,10 @@ print("✅ Model training and evaluation completed!")
 # Get model prediction results
 print("🔮 Performing model prediction...")
 try:
-    # Use nnea package's predict function
+    # Use predict function from nnea package
     from nnea import predict
 
     prediction_results = predict(nadata, split='test')
-
-    # Check prediction results
-    if prediction_results.get('error'):
-        print(f"❌ Prediction failed: {prediction_results['error']}")
-        y_test = None
-        y_pred = None
-        y_proba = None
-    else:
-        y_test = prediction_results['y_test']
-        y_pred = prediction_results['y_pred']
-        y_proba = prediction_results['y_proba']
-        print("✅ Model prediction completed")
 
 except Exception as e:
     print(f"❌ Model prediction failed: {e}")
@@ -183,12 +163,7 @@ nnea_result = {
     "model_config": nnea_config,
     "train_results": train_results,
     "eval_results": eval_results,
-    "test_auc": roc_auc_score(y_test, y_proba) if y_test is not None and y_proba is not None else None,
-    "test_report": classification_report(y_test, y_pred,
-                                         output_dict=True) if y_test is not None and y_pred is not None else None,
-    "test_pred": y_pred,
-    "test_proba": y_proba,
-    "test_true": y_test
+    "test_results": prediction_results
 }
 
 # Save to nadata object
@@ -197,43 +172,37 @@ if not hasattr(nadata, "Model"):
 
 nadata.Model["nnea_model"] = nnea_result
 
-# Save nadata object to file (using output directory from config)
+# Save nadata object to file (using output directory from configuration)
 try:
-    save_path = os.path.join(nnea_config['global']['outdir'], "melanoma_imm.pkl")
+    save_path = os.path.join(nnea_config['global']['outdir'], "TCGA_Colon_Cancer_survival.pkl")
     nadata.save(save_path, format="pickle", save_data=True)
-    print(f"✅ nnea model training completed and saved to: {save_path}")
+    print(f"✅ Nnea model training completed and saved to: {save_path}")
 except Exception as e:
-    print(f"❌ Saving failed: {e}")
+    print(f"❌ Save failed: {e}")
 
 # Reload nadata object
 print("🔄 Reloading nadata object...")
 try:
     nadata_reloaded = na.nadata()
-    load_path = os.path.join(nnea_config['global']['outdir'], "melanoma_imm.pkl")
+    load_path = os.path.join(nnea_config['global']['outdir'], "TCGA_Colon_Cancer_survival.pkl")
     nadata_reloaded.load(filepath=load_path)
-    print(f"✅ Data reloaded successfully: {load_path}")
+    print(f"✅ Data reload successful: {load_path}")
 except Exception as e:
-    print(f"❌ Data reloaded failed: {e}")
+    print(f"❌ Data reload failed: {e}")
     exit(1)
 
 # Get saved nnea results
-nnea_result_reloaded = nadata_reloaded.Model.get("nnea_model", None)
-if nnea_result_reloaded is None:
-    print("⚠️ nnea model results not found in nadata object")
-else:
-    print("📊 Reloaded model results:")
-    print(f"Training results: {nnea_result_reloaded.get('train_results', {})}")
-    print(f"Evaluation results: {nnea_result_reloaded.get('eval_results', {})}")
+nnea_result_reloaded = nadata_reloaded.Model.get(nnea_config['global']['model'], None)
 
 # Model interpretability analysis
 print("🔍 Performing model interpretability analysis...")
 try:
-    # Use nnea's explain function
-    na.explain(nadata_reloaded, method='importance', model_name="nnea")
+    # Use nnea's explain functionality
+    nnea_result_reloaded.explain(nadata_reloaded, method='importance')
     print("✅ Feature importance analysis completed")
 
 except Exception as e:
-    print(f"⚠️ Error during model interpretability analysis: {e}")
+    print(f"⚠️ Error occurred during model interpretability analysis: {e}")
 
 # Get model summary
 print("📋 Getting model summary...")
@@ -243,9 +212,9 @@ try:
     for key, value in summary.items():
         print(f"  {key}: {value}")
 except Exception as e:
-    print(f"⚠️ Error getting model summary: {e}")
+    print(f"⚠️ Error occurred while getting model summary: {e}")
 
-print("🎉 nnea model experiment completed!")
+print("🎉 Nnea model experiment completed!")
 print(f"📁 Results saved to: {nnea_config['global']['outdir']}")
-print(f"📊 Log file saved to: {os.path.join(nnea_config['global']['outdir'], 'logs')}")
+print(f"📊 Log files saved to: {os.path.join(nnea_config['global']['outdir'], 'logs')}")
 

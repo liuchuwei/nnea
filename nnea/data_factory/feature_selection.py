@@ -95,9 +95,9 @@ class fs:
     def _variance_selection(X: np.ndarray, n_features: int, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
         """方差选择"""
         # 计算方差
-        variances = np.var(X, axis=1)
+        variances = np.var(X, axis=0)
         top_indices = np.argsort(variances)[-n_features:]
-        return X[top_indices, :], top_indices
+        return X[:, top_indices], top_indices
     
     @staticmethod
     def _correlation_selection(X: np.ndarray, y: pd.Series, n_features: int, **kwargs) -> Tuple[np.ndarray, np.ndarray]:

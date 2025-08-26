@@ -1,0 +1,116 @@
+# Random Survival Forest模型配置文件
+# 用于结肠癌生存分析的随机生存森林实验
+
+# 全局配置
+[global]
+    model = "random_survival_forest"
+    task = "survival"
+    seed = 42
+    outdir = "results/coad_survival_rfs"
+    experiment_name = "COAD_Random_Survival_Forest_Analysis"
+    description = "结肠癌生存分析随机生存森林模型实验"
+
+# 数据集配置
+[data]
+    # 数据分割参数
+    test_size = 0.2
+    val_size = 0.0  # RSF模型通常不需要验证集
+    random_state = 42
+    stratify = true  # 是否进行分层抽样
+
+    # 特征选择参数
+    feature_selection = true
+    selection_method = "variance"  # 可选: "variance", "correlation", "cox_univariate"
+    n_features = 1000  # 选择的特征数量
+
+    # 数据预处理参数
+    handle_missing = "mean"  # 缺失值处理方法: "mean", "median", "drop"
+    scale_features = false  # RSF不需要标准化特征
+    remove_outliers = false  # 是否移除异常值
+
+    # 生存数据参数
+    time_col = "Time"
+    event_col = "Event"
+    time_unit = "days"  # 时间单位
+
+# 随机生存森林模型配置
+[rsf_model]
+    # 基础参数
+    n_estimators = [50, 100, 200, 300]  # 树的数量
+    max_depth = [5, 10, 15, 20]  # 最大深度
+    min_samples_split = [2, 5, 10, 20]  # 分裂所需的最小样本数
+    min_samples_leaf = [1, 2, 4, 8]  # 叶节点最小样本数
+    max_features = ["sqrt", "log2"]  # 最大特征数
+
+    # 其他参数
+    random_state = 42  # 随机种子
+    n_jobs = 8  # 并行作业数
+    bootstrap = true  # 是否使用bootstrap采样
+    oob_score = true  # 是否计算袋外得分
+
+    # 超参数调优参数网格
+    n_estimators_values = [50, 100]# [50, 100, 200, 300]  # 树的数量候选值
+    max_depth_values =  [5]# [5, 10, 15, 20]  # 最大深度候选值
+    min_samples_split_values = [2] # [2, 5, 10, 20]  # 分裂所需的最小样本数候选值
+    min_samples_leaf_values = [2]# [1, 2, 4, 8]  # 叶节点最小样本数候选值
+    max_features_values = ["sqrt"]# ["sqrt", "log2"]  # 最大特征数候选值
+
+    # 交叉验证配置
+    cv_folds = 5  # 交叉验证折数
+    cv_scoring = "c_index"  # 评估指标
+
+# 评估配置
+[evaluation]
+    # 性能指标
+    metrics = ["c_index", "logrank_test", "risk_stratification", "survival_curves"]
+
+    # C-index计算
+    c_index_method = "concordance_index"  # 一致性指数计算方法
+
+    # 风险分层参数
+    stratification_method = "median"  # 分层方法: "median", "quartile", "optimal"
+    n_groups = 2  # 分组数量
+
+    # 生存曲线参数
+    plot_km_curves = true  # 是否绘制Kaplan-Meier曲线
+    confidence_intervals = true  # 是否显示置信区间
+    plot_risk_distribution = true  # 是否绘制风险分数分布
+
+    # 特征重要性分析
+    plot_feature_importance = true  # 是否绘制特征重要性
+    top_n_features = 20  # 显示前N个重要特征
+
+# 可视化配置
+[visualization]
+    # 图表样式
+    style = "seaborn-v0_8"
+    figsize = [12, 8]
+    dpi = 300
+
+    # 颜色配置
+    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D"]
+
+    # 字体配置
+    font_family = "SimHei"
+    font_size = 12
+
+    # 图表类型
+    plot_types = [
+        "survival_curves",
+        "risk_distribution",
+        "model_performance",
+        "feature_importance",
+        "oob_error"
+    ]
+
+    # 保存格式
+    save_format = "png"
+    save_dpi = 300
+
+# 训练配置
+[training]
+    verbose = 1
+    save_model = true
+    save_format = "pickle"
+    save_data = true
+    save_predictions = true

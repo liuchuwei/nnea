@@ -1,0 +1,49 @@
+[global]
+model = "rbf_svm"
+device = "auto"
+seed = 42
+inputfl = "./datasets/cell_gender/lymphocyte_gender_classification.pkl"
+outputfl = "lym_gender_RBFSVM.pkl"
+outdir = "experiment/lym_gender_RBFSVM"
+
+[dataset]
+test_size = 0.15
+val_size = 0.15
+random_state = 42
+
+[rbf_svm]
+C = [ 0.001, 0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0,]
+gamma = [ 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 1.0,]
+kernel = [ "rbf",]
+tol = [ 0.0001, 1e-5,]
+max_iter = [ 2000, 5000,]
+cache_size = [ 1000,]
+shrinking = [ true,]
+random_state = 42
+class_weight = "balanced"
+probability = true
+decision_function_shape = [ "ovr",]
+cv_folds = 5
+cv_scoring = "roc_auc"
+n_jobs = 8
+feature_selection = true
+selection_method = "lasso"
+n_features = 7000
+selection_alpha = 0.01
+
+[training]
+verbose = 1
+save_model = true
+save_format = "pickle"
+save_data = true
+
+[evaluation]
+metrics = [ "roc_auc", "classification_report",]
+save_predictions = true
+save_probabilities = true
+
+[rbf_svm.preprocessing]
+fill_na = true
+fill_method = "mean"
+scale_data = true
+scale_method = "standard"

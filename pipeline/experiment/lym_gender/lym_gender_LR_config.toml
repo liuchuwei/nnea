@@ -1,31 +1,32 @@
-# DecisionTreeClassifier model configuration file
+# LogisticRegression model configuration file
 # Global configuration
 [global]
-    model = "decision_tree"
+    model = "logistic_regression"
     device = "auto"  # Auto-detect GPU/CPU
     seed = 42
-    inputfl = "./datasets/tumor_imm/melanoma_immunotherapy.pkl"
-    outputfl = "melanoma_imm_DT.pkl"
-    outdir = "experiment/melanoma_imm_DT"
+    inputfl = "./datasets/cell_gender/lymphocyte_gender_classification.pkl"
+    outputfl = "lym_gender_LR.pkl"
+    outdir = "experiment/lym_gender_LR"
 
 # Dataset configuration
 [dataset]
-    test_size = 0.2
-    val_size = 0.2
+    test_size = 0.15
+    val_size = 0.15
     random_state = 42
 
-# DecisionTreeClassifier model configuration
-[decision_tree]
+# LogisticRegression model configuration
+[logistic_regression]
     # Basic parameters
-    criterion = ["gini", "entropy", "log_loss"]  # Split criterion
-    max_depth = [3, 5, 10, 20]  # Maximum depth
-    min_samples_split = [2, 5, 10]  # Minimum samples required for split
-    min_samples_leaf = [1, 2, 4]  # Minimum samples at leaf node
-    max_features = ["sqrt", "log2"]  # Maximum number of features
+    C = [0.01, 0.1, 1.0, 10.0, 100.0]  # Inverse of regularization strength
+    penalty = ["l1", "l2"]  # Regularization type
+    solver = ["liblinear", "saga"]  # Optimization algorithm
+    max_iter = [100, 200, 500]  # Maximum iterations
 
     # Other optional parameters
-    random_state = 42  # Random seed
+    tol = 1e-4  # Convergence tolerance
     class_weight = "balanced"  # Class weight
+    random_state = 42  # Random seed
+    warm_start = false  # Whether to use previous solution as initialization
 
     # Cross-validation configuration
     cv_folds = 5  # Cross-validation folds
@@ -34,12 +35,12 @@
 
     # Feature selection configuration
     feature_selection = true
-    selection_method = "random_forest"
-    n_features = 30
+    selection_method = "lasso"
+    n_features = 100
     selection_alpha = 0.01
 
     # Data preprocessing configuration
-    [decision_tree.preprocessing]
+    [logistic_regression.preprocessing]
         fill_na = true
         fill_method = "mean"
         scale_data = true

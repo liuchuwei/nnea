@@ -260,21 +260,11 @@ def annotate_genesets(genesets: List[List[str]],
         )
         
         # Use enrichment DataFrame's ID column as key
-        if not enrich_result.empty:
-            for _, row in enrich_result.iterrows():
-                pathway_id = row['ID']
-                annotation_results[pathway_id] = {
-                    'genes': geneset,
-                    'enrichment': enrich_result,
-                    'geneset_index': i + 1
-                }
-        else:
-            # If no enrichment results, use default key
-            annotation_results[f"geneset_{i+1}"] = {
-                'genes': geneset,
-                'enrichment': enrich_result,
-                'geneset_index': i + 1
-            }
+        annotation_results[f"geneset_{i+1}"] = {
+            'genes': geneset,
+            'enrichment': enrich_result,
+            'geneset_index': i + 1
+        }
     
     logger.info(f"Completed annotation of {len(annotation_results)} gene sets")
     return annotation_results

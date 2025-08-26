@@ -1,4 +1,4 @@
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import AdaBoostClassifier
 from sklearn.metrics import roc_auc_score, classification_report
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
@@ -12,7 +12,7 @@ import random
 
 warnings.filterwarnings('ignore')
 
-# Read DecisionTreeClassifier configuration file
+# Read AdaBoostClassifier configuration file
 try:
     config = toml.load("./config.toml")
 except Exception as e:
@@ -38,11 +38,11 @@ output_dir = config['global']['outdir']
 os.makedirs(output_dir, exist_ok=True)
 
 # Set log output to output directory
-log_file = os.path.join(output_dir, "decision_tree_experiment.log")
-na.setup_logging(log_file=log_file, experiment_name="decision_tree")
+log_file = os.path.join(output_dir, "adaboost_experiment.log")
+na.setup_logging(log_file=log_file, experiment_name="adaboost")
 logger = na.get_logger(__name__)
 
-logger.info("⚙️ Reading DecisionTreeClassifier configuration file...")
+logger.info("⚙️ Reading AdaBoostClassifier configuration file...")
 logger.info("✅ Configuration file read successfully")
 logger.info(f"📁 Creating output directory: {output_dir}")
 logger.info(f"📝 Log file set to: {log_file}")
@@ -67,7 +67,7 @@ logger.info("🔧 Data preprocessing...")
 X = nadata.X
 
 # Use preprocessing settings from configuration
-preprocessing_config = config['decision_tree']['preprocessing']
+preprocessing_config = config['adaboost']['preprocessing']
 
 # Use na.pp.fillna to handle missing values
 if preprocessing_config['fill_na'] and np.isnan(X).any():
@@ -86,21 +86,21 @@ nadata.X = X
 
 # Process labels
 logger.info("🏷️ Processing labels...")
-y = nadata.Meta['response_NR']
-y = y.map({'N': 0, 'R': 1})
+y = nadata.Meta['sex']
+y = y.map({'Female': 0, 'Male': 1})
 nadata.Meta['target'] = y  # Model uses 'target' by default
 
 # Feature selection
-if config['decision_tree']['feature_selection']:
+if config['adaboost']['feature_selection']:
     logger.info("🔍 Feature selection...")
     nadata = na.fs.apply_feature_selection(
         nadata,
-        method=config['decision_tree']['selection_method'],
-        n_features=config['decision_tree']['n_features'],
+        method=config['adaboost']['selection_method'],
+        n_features=config['adaboost']['n_features'],
         target_col='target',  # Use default target column
-        alpha=config['decision_tree']['selection_alpha']
+        alpha=config['adaboost']['selection_alpha']
     )
-    logger.info(f"✅ Feature selection completed, selected features: {config['decision_tree']['n_features']}")
+    logger.info(f"✅ Feature selection completed, selected features: {config['adaboost']['n_features']}")
 
 # Data splitting
 logger.info("✂️ Performing data splitting...")
@@ -115,41 +115,38 @@ try:
 except Exception as e:
     logger.error(f"❌ Data splitting failed: {e}")
 
-# Use na.pp.x_train_test and na.pp.y_train_test to get train/test sets
+# Use na.pp.x_train_test and na.pp.y_train_test to get training and testing sets
 X_train, X_test = na.pp.x_train_test(X, nadata)
 y_train, y_test = na.pp.y_train_test(y, nadata)
 
 logger.info(f"Training set feature shape: {X_train.shape}")
-logger.info(f"Test set feature shape: {X_test.shape}")
+logger.info(f"Testing set feature shape: {X_test.shape}")
 logger.info(f"Training set label shape: {y_train.shape}")
-logger.info(f"Test set label shape: {y_test.shape}")
+logger.info(f"Testing set label shape: {y_test.shape}")
 
 # Build parameter grid from configuration file
 param_grid = {
-    'criterion': config['decision_tree']['criterion'],
-    'max_depth': config['decision_tree']['max_depth'] + [None],
-    'min_samples_split': config['decision_tree']['min_samples_split'],
-    'min_samples_leaf': config['decision_tree']['min_samples_leaf'],
-    'max_features': config['decision_tree']['max_features'] + [None]
+    'n_estimators': config['adaboost']['n_estimators'],
+    'learning_rate': config['adaboost']['learning_rate'],
+    'algorithm': config['adaboost']['algorithm']
 }
 
-# Build DecisionTreeClassifier model
-dt = DecisionTreeClassifier(
-    random_state=config['decision_tree']['random_state'],
-    class_weight=config['decision_tree']['class_weight']
+# Build AdaBoostClassifier model
+adaboost = AdaBoostClassifier(
+    random_state=config['adaboost']['random_state']
 )
 
 # Grid search cross-validation
 grid = GridSearchCV(
-    dt,
+    adaboost,
     param_grid,
     cv=StratifiedKFold(
-        n_splits=config['decision_tree']['cv_folds'],
+        n_splits=config['adaboost']['cv_folds'],
         shuffle=True,
-        random_state=config['decision_tree']['random_state']
+        random_state=config['adaboost']['random_state']
     ),
-    scoring=config['decision_tree']['cv_scoring'],
-    n_jobs=config['decision_tree']['n_jobs'],
+    scoring=config['adaboost']['cv_scoring'],
+    n_jobs=config['adaboost']['n_jobs'],
     verbose=config['training']['verbose']
 )
 
@@ -159,7 +156,7 @@ grid.fit(X_train, y_train)
 logger.info(f"Best parameters: {grid.best_params_}")
 logger.info(f"Best AUC score: {grid.best_score_}")
 
-# Evaluate on test set
+# Evaluate on the test set
 y_pred = grid.predict(X_test)
 y_proba = grid.predict_proba(X_test)[:, 1]
 
@@ -177,8 +174,8 @@ logger.info(f"Test set accuracy: {acc:.4f}")
 logger.info(f"Test set AUC: {auc:.4f}")
 logger.info(f"Test set classification report:\n{classification_report(y_test, y_pred)}")
 
-# Build DecisionTreeClassifier result dictionary
-dt_result = {
+# Build AdaBoostClassifier result dictionary
+adaboost_result = {
     "best_params": grid.best_params_,
     "best_cv_auc": grid.best_score_,
     "test_auc": auc,
@@ -193,23 +190,23 @@ dt_result = {
 if not hasattr(nadata, "Model"):
     nadata.Model = {}
 
-nadata.Model["DecisionTreeClassifier"] = dt_result
+nadata.Model["AdaBoostClassifier"] = adaboost_result
 
 # Save nadata object to configured output directory
 output_file = os.path.join(output_dir, config['global']['outputfl'])
 nadata.save(output_file, format=config['training']['save_format'], save_data=config['training']['save_data'])
-logger.info(f"✅ Decision tree model training completed and saved to: {output_file}")
+logger.info(f"✅ AdaBoost model training completed and saved to: {output_file}")
 
 # Save configuration information
-config_file = os.path.join(output_dir, "decision_tree_config.toml")
+config_file = os.path.join(output_dir, "adaboost_config.toml")
 with open(config_file, 'w', encoding='utf-8') as f:
     toml.dump(config, f)
 logger.info(f"✅ Configuration file saved to: {config_file}")
 
-# Save training result summary
+# Save training results summary
 summary_file = os.path.join(output_dir, "training_summary.txt")
 with open(summary_file, 'w', encoding='utf-8') as f:
-    f.write("LogisticRegression Training Result Summary\n")
+    f.write("AdaBoostClassifier Training Results Summary\n")
     f.write("=" * 50 + "\n")
     f.write(f"Best parameters: {grid.best_params_}\n")
     f.write(f"Best cross-validation AUC: {grid.best_score_:.4f}\n")
@@ -219,9 +216,9 @@ with open(summary_file, 'w', encoding='utf-8') as f:
     f.write(f"Test set precision: {precision:.4f}\n")
     f.write(f"Test set accuracy: {acc:.4f}\n")
     f.write(f"Training set shape: {X_train.shape}\n")
-    f.write(f"Test set shape: {X_test.shape}\n")
+    f.write(f"Testing set shape: {X_test.shape}\n")
     f.write("\nClassification report:\n")
     f.write(classification_report(y_test, y_pred))
 
-logger.info(f"✅ Training result summary saved to: {summary_file}")
+logger.info(f"✅ Training results summary saved to: {summary_file}")
 logger.info("🎉 Experiment completed!")

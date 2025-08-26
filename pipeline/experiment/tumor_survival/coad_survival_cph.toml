@@ -1,0 +1,171 @@
+# Cox比例风险模型配置文件
+# 用于结肠癌生存分析的Cox比例风险模型实验
+
+# 全局配置
+[global]
+    model = "cox_proportional_hazards"
+    task = "survival"
+    seed = 42
+    outdir = "results/coad_survival_cph"
+    experiment_name = "COAD_Cox_Survival_Analysis"
+    description = "结肠癌生存分析Cox比例风险模型实验"
+
+# 数据集配置
+[data]
+    # 数据分割参数
+    test_size = 0.2
+    val_size = 0.0  # Cox模型通常不需要验证集
+    random_state = 42
+    stratify = true  # 是否进行分层抽样
+
+    # 特征选择参数
+    feature_selection = true
+    selection_method = "variance"  # 可选: "variance", "correlation", "cox_univariate"
+    n_features = 1000  # 选择的特征数量
+
+    # 数据预处理参数
+    handle_missing = "mean"  # 缺失值处理方法: "mean", "median", "drop"
+    scale_features = true  # 是否标准化特征
+    remove_outliers = false  # 是否移除异常值
+
+    # 生存数据参数
+    time_col = "OS_time"
+    event_col = "OS"
+    time_unit = "days"  # 时间单位
+
+# Cox模型配置
+[cox_model]
+    # 模型参数
+    penalizer = 0.1  # L2正则化参数
+    l1_ratio = 0.0  # L1正则化比例 (0.0表示纯L2正则化)
+
+    # 拟合参数
+    max_iter = 1000  # 最大迭代次数
+    tol = 1e-6  # 收敛容差
+
+    # 超参数调优参数网格
+    penalizer_values = [0.01, 0.1, 0.5, 1.0, 2.0]  # 正则化参数候选值
+    l1_ratio_values = [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0]  # L1比例候选值
+    max_iter_values = [500, 1000, 2000]  # 最大迭代次数候选值
+
+    # 特征选择参数
+    stepwise = false  # 是否使用逐步回归
+    p_threshold = 0.05  # 逐步回归的p值阈值
+
+    # 模型诊断参数
+    check_assumptions = true  # 是否检查比例风险假设
+    plot_assumptions = true  # 是否绘制假设检验图
+
+# 评估配置
+[evaluation]
+    # 性能指标
+    metrics = ["c_index", "logrank_test", "risk_stratification"]
+
+    # C-index计算
+    c_index_method = "concordance_index"  # 一致性指数计算方法
+
+    # 风险分层参数
+    stratification_method = "median"  # 分层方法: "median", "quartile", "optimal"
+    n_groups = 2  # 分组数量
+
+    # 生存曲线参数
+    plot_km_curves = true  # 是否绘制Kaplan-Meier曲线
+    confidence_intervals = true  # 是否显示置信区间
+    plot_risk_distribution = true  # 是否绘制风险分数分布
+
+# 可视化配置
+[visualization]
+    # 图表样式
+    style = "seaborn-v0_8"
+    figsize = [12, 8]
+    dpi = 300
+
+    # 颜色配置
+    colors = ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D"]
+
+    # 字体配置
+    font_family = "SimHei"
+    font_size = 12
+
+    # 图表类型
+    plot_types = [
+        "survival_curves",
+        "risk_distribution",
+        "model_performance",
+        "feature_importance"
+    ]
+
+    # 保存格式
+    save_format = "png"
+    save_dpi = 300
+
+# 输出配置
+[output]
+    # 保存的文件类型
+    save_model = true  # 保存训练好的模型
+    save_predictions = true  # 保存预测结果
+    save_plots = true  # 保存图表
+    save_summary = true  # 保存结果摘要
+
+    # 文件命名
+    model_filename = "cox_model.pkl"
+    predictions_filename = "predictions.csv"
+    results_filename = "results_summary.csv"
+
+    # 日志配置
+    log_level = "INFO"
+    log_file = "experiment.log"
+
+    # 报告配置
+    generate_report = true  # 是否生成实验报告
+    report_format = "html"  # 报告格式: "html", "pdf", "markdown"
+
+# 实验配置
+[experiment]
+    # 实验设置
+    n_repeats = 1  # 重复实验次数
+    cross_validation = false  # 是否使用交叉验证
+    cv_folds = 5  # 交叉验证折数
+
+    # 超参数调优设置
+    hyperparameter_tuning = true  # 是否启用超参数调优
+    tuning_method = "grid_search"  # 调优方法: "grid_search", "random_search", "bayesian"
+    n_trials = 50  # 随机搜索或贝叶斯优化的试验次数
+
+    # 随机种子设置
+    random_seed = 42
+    numpy_seed = 42
+    torch_seed = 42
+
+    # 并行计算
+    n_jobs = -1  # 并行作业数 (-1表示使用所有CPU)
+
+    # 内存管理
+    memory_efficient = false  # 是否使用内存高效模式
+
+    # 调试模式
+    debug = false  # 是否启用调试模式
+    verbose = 1  # 详细程度 (0-2)
+
+# 高级配置
+[advanced]
+    # 数值计算参数
+    numerical_precision = "double"  # 数值精度: "single", "double"
+
+    # 优化器参数
+    optimizer = "lbfgs"  # 优化器类型: "lbfgs", "newton", "powell"
+
+    # 收敛检查
+    convergence_check = true  # 是否检查收敛性
+    convergence_tolerance = 1e-6  # 收敛容差
+
+    # 异常处理
+    handle_singular_matrix = true  # 是否处理奇异矩阵
+    handle_convergence_failure = true  # 是否处理收敛失败
+
+    # 模型诊断
+    diagnostic_tests = [
+        "proportional_hazards",
+        "linearity",
+        "influential_observations"
+    ]

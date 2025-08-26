@@ -1,6 +1,6 @@
 """
-NNEA (Neural Network with Explainable Architecture) 模型
-实现可解释的神经网络架构，支持基因集学习和生物学解释
+NNEA (Neural Network with Explainable Architecture) Model
+Implements explainable neural network architecture with support for gene set learning and biological interpretation
 """
 
 import torch
@@ -16,87 +16,131 @@ import logging
 
 from .base import BaseModel
 from .nnea_layers import TrainableGeneSetLayer, BiologicalConstraintLayer
-# 修复导入路径问题
+# Fix import path issues
 import sys
 import os
-# 添加项目根目录到路径
+# Add project root directory to path
 project_root = os.path.join(os.path.dirname(__file__), '..', '..')
 if project_root not in sys.path:
     sys.path.append(project_root)
-try:
-    from utils.train_utils import AttentionBlock
-except ImportError:
-    # 如果导入失败，创建一个简单的AttentionBlock类
-    import torch.nn as nn
-    class AttentionBlock(nn.Module):
-        def __init__(self, input_dim):
-            super(AttentionBlock, self).__init__()
-            self.attention = nn.Linear(input_dim, 1)
-        
-        def forward(self, x):
-            attention_weights = torch.softmax(self.attention(x), dim=1)
-            return torch.sum(attention_weights * x, dim=1)
-        
-        def get_attention_weights(self):
-            return self.attention.weight
+
+class SafeBatchNorm1d(nn.BatchNorm1d):
+    """
+    A safe version of BatchNorm1d that automatically switches to eval mode
+    when batch size is too small for training.
+    """
+    def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True, track_running_stats=True):
+        super().__init__(num_features, eps, momentum, affine, track_running_stats)
+    
+    def forward(self, input):
+        # If batch size is 1 and we're in training mode, switch to eval mode temporarily
+        if self.training and input.size(0) == 1:
+            self.eval()
+            output = super().forward(input)
+            self.train()
+            return output
+        return super().forward(input)
+
+
+class AttentionBlock(nn.Module):
+    """自注意力模块，用于动态加权特征"""
+
+    def __init__(self, input_dim):
+        super().__init__()
+        self.query = nn.Linear(input_dim, input_dim)  # 压缩通道降低计算量
+        self.key = nn.Linear(input_dim, input_dim)
+        self.value = nn.Linear(input_dim, input_dim)
+        self.gamma = nn.Parameter(torch.zeros(1))  # 可学习的残差权重
+        self.last_attention_weights = None  # 存储最后一次的注意力权重
+
+    def forward(self, x):
+        # x shape: [Batch, Sequence, Features] → 需调整为特征维度
+        if x.dim() == 2:  # 若输入为2D（无序列长度），增加序列维度
+            x = x.unsqueeze(1)  # [B, 1, D]
+
+        Q = self.query(x)  # [B, Seq, D//8]
+        K = self.key(x)  # [B, Seq, D//8]
+        V = self.value(x)  # [B, Seq, D]
+
+        # 计算注意力分数
+        scores = torch.bmm(Q, K.transpose(1, 2))  # [B, Seq, Seq]
+        attn_weights = F.softmax(scores, dim=-1)  # 归一化权重
+
+        # 存储注意力权重
+        self.last_attention_weights = attn_weights
+
+        # 加权聚合特征
+        context = torch.bmm(attn_weights, V)  # [B, Seq, D]
+
+        # 残差连接 + 特征压缩回原始维度
+        output = self.gamma * context + x
+        return output.squeeze(1)  # 移除序列维度 → [B, D]
+
+    def get_attention_weights(self):
+        """获取注意力权重"""
+        if self.last_attention_weights is not None:
+            return self.last_attention_weights
+        else:
+            return torch.zeros(1)  # 返回占位符
+
 
 logger = logging.getLogger(__name__)
 
 class NNEAModel(nn.Module):
     """
-    NNEA神经网络模型
-    以TrainableGeneSetLayer为核心，包含注意力机制和可解释性组件
+    NNEA Neural Network Model
+    Core component is TrainableGeneSetLayer, includes attention mechanism and explainability components
     """
     
     def __init__(self, config: Dict[str, Any]):
         """
-        初始化NNEA模型
+        Initialize NNEA model
         
         Args:
-            config: 模型配置
+            config: Model configuration
         """
         super(NNEAModel, self).__init__()
         
-        # 设备配置
+        # Device configuration
         device_config = config.get('device', 'cpu')
         if device_config == 'cuda' and torch.cuda.is_available():
             self.device = torch.device('cuda')
         else:
             self.device = torch.device('cpu')
         
-        # 模型参数
+        # Model parameters
         self.input_dim = config.get('input_dim', 0)
         self.output_dim = config.get('output_dim', 1)
         self.dropout_rate = config.get('dropout', 0.3)
         self.activation = config.get('activation', 'relu')
         
-        # 任务类型 - 用于判断是否需要输出概率
+        # Task type - used to determine if probability output is needed
         self.task_type = config.get('global').get('task', 'classification')
         
-        # 获取nnea配置部分
+        # Get nnea configuration section
         nnea_config = config.get('nnea', {})
         
-        # NNEA特定参数 - 从nnea配置中获取
+        # NNEA specific parameters - get from nnea configuration
         self.use_piror_knowledge = nnea_config.get('piror_knowledge', {}).get('use_piror_knowledge', False)
         self.piror_knowledge = nnea_config.get('piror_knowledge', {}).get('piror_knowledge', None)
         self.freeze_piror = nnea_config.get('piror_knowledge', {}).get('freeze_piror', True)
-        # 如果有piror_knowledge，则num_genesets等于piror_knowledge的行数，否则取配置
+        # If piror_knowledge exists, num_genesets equals the number of rows in piror_knowledge, otherwise use configuration
         if self.piror_knowledge is not None:
             self.num_genesets = self.piror_knowledge.shape[0]
         else:
             self.num_genesets = nnea_config.get('geneset_layer', {}).get('num_genesets', 20)
         
-        # Focus layer配置
+        # Focus layer configuration
         self.focus_config = nnea_config.get('focus_layer', {})
         
-        # Assist layer配置
+        # Assist layer configuration
         self.assist_config = nnea_config.get('assist_layer', {})
         self.use_assist_in_init = self.assist_config.get('use_in_init', True)
         self.assist_dropout = self.assist_config.get('dropout', 0.1)
         self.assist_output = self.assist_config.get('output', 2)
         self.assist_type = self.assist_config.get('type', "rec")
 
-        # TrainableGeneSetLayer参数 - 从nnea.geneset_layer获取
+        # TrainableGeneSetLayer parameters - get from nnea.geneset_layer
         geneset_config = nnea_config.get('geneset_layer', {})
         self.min_set_size = geneset_config.get('min_set_size', 10)
         self.max_set_size = geneset_config.get('max_set_size', 50)
@@ -105,21 +149,21 @@ class NNEAModel(nn.Module):
         self.num_fc_layers = geneset_config.get('num_fc_layers', 0)
         self.geneset_threshold = geneset_config.get('geneset_threshold', 1e-5)
         
-        # 构建网络层
+        # Build network layers
         self._build_layers()
         
     def _is_classification_task(self) -> bool:
         """
-        判断当前任务是否为分类任务
+        Determine if current task is classification task
         
         Returns:
-            是否为分类任务
+            Whether it is a classification task
         """
         return self.task_type == 'classification'
         
     def _build_layers(self):
-        """构建网络层"""
-        # 核心：TrainableGeneSetLayer
+        """Build network layers"""
+        # Core: TrainableGeneSetLayer
         self.geneset_layer = TrainableGeneSetLayer(
             num_genes=self.input_dim,
             num_sets=self.num_genesets,
@@ -132,184 +176,184 @@ class NNEAModel(nn.Module):
             geneset_threshold=self.geneset_threshold
         )
 
-        # 构建辅助层（assist_layer）- 用于初始化时直接映射概率
+        # Build assist layer - used for direct probability mapping during initialization
         self.assist_layer = nn.Sequential(
             nn.Linear(self.num_genesets, self.assist_output),
             nn.Dropout(self.assist_dropout),
         )
         
-        # 构建focus_layer（集成hidden_layer、attention_layer和output_layer）
+        # Build focus_layer (integrates hidden_layer, attention_layer and output_layer)
         self.focus_layer = self._build_focus_layer()
         
-        # 初始化标志，用于控制是否使用assist_layer
+        # Initialization flag, used to control whether to use assist_layer
         self.use_assist_layer = True
         
     def _build_focus_layer(self):
         """
-        构建focus_layer，集成hidden_layer、attention_layer和output_layer
-        参考train_utils中的BuildClassifier函数
+        Build focus_layer, integrating hidden_layer, attention_layer and output_layer
+        Reference the BuildClassifier function in train_utils
         """
-        # 获取配置参数
+        # Get configuration parameters
         focus_config = getattr(self, 'focus_config', {})
         classifier_name = focus_config.get('classifier_name', 'linear')
         hidden_dims = focus_config.get('hidden_dims', [])
         dropout_rates = focus_config.get('classifier_dropout', [self.dropout_rate] * len(hidden_dims))
         
         layers = []
-        current_dim = self.num_genesets  # 基因集层的输出维度
+        current_dim = self.num_genesets  # Output dimension of gene set layer
         
         if classifier_name == "linear":
-            # 线性分类器结构
+            # Linear classifier structure
             if len(hidden_dims) > 0:
                 for i, h_dim in enumerate(hidden_dims):
                     layers.append(nn.Linear(current_dim, h_dim))
                     layers.append(nn.ReLU())
                     if i != len(hidden_dims) - 1:
-                        layers.append(nn.BatchNorm1d(h_dim))
+                        layers.append(SafeBatchNorm1d(h_dim))
                         layers.append(nn.Dropout(dropout_rates[i] if i < len(dropout_rates) else self.dropout_rate))
                     current_dim = h_dim
             else:
-                # 输出层
+                # Output layer
                 layers.append(nn.ReLU())
             layers.append(nn.Linear(current_dim, self.output_dim))
             
         elif classifier_name == "attention":
-            # 注意力分类器结构
-            # 1. 添加自注意力层
+            # Attention classifier structure
+            # 1. Add self-attention layer
             layers.append(AttentionBlock(current_dim))
             
-            # 2. 添加MLP层（与linear分类器结构一致）
+            # 2. Add MLP layers (same structure as linear classifier)
             if len(hidden_dims) > 0:
                 for i, h_dim in enumerate(hidden_dims):
                     layers.append(nn.Linear(current_dim, h_dim))
                     layers.append(nn.ReLU())
                     if i != len(hidden_dims) - 1:
-                        layers.append(nn.BatchNorm1d(h_dim))
+                        layers.append(SafeBatchNorm1d(h_dim))
                         layers.append(nn.Dropout(dropout_rates[i] if i < len(dropout_rates) else self.dropout_rate))
                     current_dim = h_dim
             
-            # 3. 输出层
+            # 3. Output layer
             layers.append(nn.Linear(current_dim, self.output_dim))
             
         else:
-            # 默认结构（保持原有逻辑）
+            # Default structure (maintain original logic)
             for hidden_dim in hidden_dims:
                 layers.extend([
                     nn.Linear(current_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
+                    SafeBatchNorm1d(hidden_dim),
                     nn.ReLU() if self.activation == 'relu' else nn.Tanh(),
                     nn.Dropout(self.dropout_rate)
                 ])
                 current_dim = hidden_dim
             
-            # 注意力层
+            # Attention layer
             layers.append(AttentionBlock(current_dim))
             
-            # 输出层
+            # Output layer
             layers.append(nn.Linear(current_dim, self.output_dim))
         
         return nn.Sequential(*layers)
         
     def _prepare_input_for_geneset(self, x):
         """
-        为基因集层准备输入数据
+        Prepare input data for gene set layer
         
         Args:
-            x: 输入张量 (batch_size, num_genes)
+            x: Input tensor (batch_size, num_genes)
             
         Returns:
-            R, S: 秩序矩阵和排列索引
+            R, S: Rank matrix and sort indices
         """
-        # 计算每个样本的基因表达值排名（升序）
+        # Calculate gene expression value ranking for each sample (ascending order)
         rank_exp = torch.argsort(torch.argsort(x, dim=1, descending=False), dim=1, descending=False).float()
         
-        # 生成降序排列索引
+        # Generate descending order sort indices
         sort_exp = torch.argsort(x, dim=1, descending=True)
         
         return rank_exp, sort_exp
         
     def forward(self, x):
         """
-        前向传播
+        Forward propagation
         
         Args:
-            x: 输入张量 (batch_size, num_genes)
+            x: Input tensor (batch_size, num_genes)
             
         Returns:
-            输出张量
+            Output tensor
         """
-        # 为基因集层准备输入
+        # Prepare input for gene set layer
         R, S = self._prepare_input_for_geneset(x)
         
-        # 核心：TrainableGeneSetLayer
+        # Core: TrainableGeneSetLayer
         geneset_output = self.geneset_layer(R, S)
         
-        # 根据初始化标志选择使用assist_layer还是focus_layer
+        # Choose between assist_layer and focus_layer based on initialization flag
         if self.use_assist_layer:
-            # 使用辅助层直接映射概率
+            # Use assist layer for direct probability mapping
             x = self.assist_layer(geneset_output)
-            # 根据任务类型决定是否输出概率
+            # Decide whether to output probability based on task type
             if self.assist_type == "classification":
-                # 对于分类任务，应用log_softmax
+                # For classification tasks, apply log_softmax
                 x = F.log_softmax(x, dim=1)
-            # 对于回归、生存分析等任务，直接返回原始输出
+            # For regression, survival analysis and other tasks, return original output directly
         else:
-            # 使用focus_layer（集成hidden_layer、attention_layer和output_layer）
+            # Use focus_layer (integrates hidden_layer, attention_layer and output_layer)
             x = self.focus_layer(geneset_output)
-            # 根据任务类型决定是否输出概率
+            # Decide whether to output probability based on task type
             if self._is_classification_task():
-                # 对于分类任务，应用log_softmax
+                # For classification tasks, apply log_softmax
                 x = F.log_softmax(x, dim=1)
-            # 对于回归、生存分析等任务，直接返回原始输出
+            # For regression, survival analysis and other tasks, return original output directly
         
         return x
     
     def get_geneset_importance(self) -> torch.Tensor:
         """
-        获取基因集重要性
+        Get gene set importance
         
         Returns:
-            基因集重要性张量
+            Gene set importance tensor
         """
-        # 使用基因集指示矩阵的均值作为重要性
+        # Use mean of gene set indicator matrix as importance
         indicators = self.geneset_layer.get_set_indicators()
         return torch.mean(indicators, dim=1)
     
     def get_attention_weights(self) -> torch.Tensor:
         """
-        获取注意力权重
+        Get attention weights
         
         Returns:
-            注意力权重张量
+            Attention weights tensor
         """
-        # 尝试从focus_layer中获取注意力权重
+        # Try to get attention weights from focus_layer
         try:
-            # 查找focus_layer中的AttentionBlock
+            # Find AttentionBlock in focus_layer
             for module in self.focus_layer.modules():
                 if isinstance(module, AttentionBlock):
                     return module.get_attention_weights()
         except:
             pass
         
-        # 如果没有找到注意力层，返回基因集重要性作为替代
+        # If attention layer not found, return gene set importance as alternative
         indicators = self.geneset_layer.get_set_indicators()
         return torch.mean(indicators, dim=1)
     
     def get_geneset_assignments(self) -> torch.Tensor:
         """
-        获取基因到基因集的分配
+        Get gene to gene set assignments
         
         Returns:
-            基因分配矩阵
+            Gene assignment matrix
         """
         return self.geneset_layer.get_set_indicators()
     
     def regularization_loss(self) -> torch.Tensor:
         """
-        计算正则化损失
+        Calculate regularization loss
         
         Returns:
-            正则化损失
+            Regularization loss
         """
         reg_loss = self.geneset_layer.regularization_loss()
 
@@ -317,33 +361,33 @@ class NNEAModel(nn.Module):
     
     def set_assist_layer_mode(self, use_assist: bool) -> None:
         """
-        设置是否使用辅助层
+        Set whether to use assist layer
         
         Args:
-            use_assist: 是否使用辅助层
+            use_assist: Whether to use assist layer
         """
         self.use_assist_layer = use_assist
         import logging
         logger = logging.getLogger(__name__)
         if use_assist:
-            logger.info("已启用辅助层模式，将直接映射geneset输出为概率")
+            logger.info("Assist layer mode enabled, will directly map geneset output to probability")
         else:
-            logger.info("已启用标准模式，将使用focus_layer进行预测")
+            logger.info("Standard mode enabled, will use focus_layer for prediction")
     
     def get_assist_layer_mode(self) -> bool:
         """
-        获取当前辅助层使用状态
+        Get current assist layer usage status
         
         Returns:
-            是否使用辅助层
+            Whether assist layer is being used
         """
         return self.use_assist_layer
     
     def get_task_type(self) -> str:
         """
-        获取当前任务类型
+        Get current task type
         
         Returns:
-            任务类型字符串
+            Task type string
         """
         return self.task_type

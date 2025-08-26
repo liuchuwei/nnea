@@ -4,14 +4,14 @@
     model = "random_forest"
     device = "auto"  # Auto-detect GPU/CPU
     seed = 42
-    inputfl = "./datasets/tumor_imm/melanoma_immunotherapy.pkl"
-    outputfl = "melanoma_imm_RF.pkl"
-    outdir = "experiment/melanoma_imm_RF"
+    inputfl = "./datasets/cell_gender/lymphocyte_gender_classification.pkl"
+    outputfl = "lym_gender_RF.pkl"
+    outdir = "experiment/lym_gender_RF"
 
 # Dataset configuration
 [dataset]
-    test_size = 0.2
-    val_size = 0.2
+    test_size = 0.15
+    val_size = 0.15
     random_state = 42
 
 # RandomForestClassifier model configuration
@@ -36,7 +36,7 @@
     # Feature selection configuration - RF usually doesn't need standardization, but needs feature selection
     feature_selection = true
     selection_method = "random_forest"
-    n_features = 30
+    n_features = 100
     selection_alpha = 0.01
 
     # Data preprocessing configuration - RF is not sensitive to feature scale, but needs to handle missing values

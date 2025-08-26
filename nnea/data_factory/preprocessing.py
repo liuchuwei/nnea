@@ -1,6 +1,6 @@
 """
-数据预处理模块（na.pp）
-包含数据标准化、缺失值处理、异常值检测和处理、基因/样本过滤等功能
+Data preprocessing module (na.pp)
+Contains data standardization, missing value handling, outlier detection and processing, gene/sample filtering and other functions
 """
 
 import numpy as np
@@ -14,31 +14,31 @@ import warnings
 
 class pp:
     """
-    数据预处理类，提供各种预处理方法
+    Data preprocessing class, providing various preprocessing methods
     """
     
     @staticmethod
     def process_survival_data(nadata, os_col: str = 'OS', os_time_col: str = 'OS.time', 
                               time_unit: str = 'auto'):
         """
-        生存数据标准处理
+        Standard survival data processing
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含生存数据的nadata对象
+        nadata : nadata object
+            nadata object containing survival data
         os_col : str
-            生存状态列名，默认为'OS'
+            Survival status column name, default is 'OS'
         os_time_col : str
-            生存时间列名，默认为'OS.time'
+            Survival time column name, default is 'OS.time'
         time_unit : str
-            时间单位：'auto', 'days', 'months', 'years'
-            如果为'auto'，将自动判断并统一转换为月
+            Time unit: 'auto', 'days', 'months', 'years'
+            If 'auto', will automatically determine and convert to months
             
         Returns:
         --------
         nadata
-            处理后的nadata对象
+            Processed nadata object
         """
         if nadata.Meta is None:
             raise ValueError("nadata.Meta is None, cannot process survival data")
@@ -49,44 +49,44 @@ class pp:
         if os_time_col not in nadata.Meta.columns:
             raise ValueError(f"Column '{os_time_col}' not found in nadata.Meta")
         
-        # 提取生存数据
+        # Extract survival data
         y = nadata.Meta.loc[:, [os_col, os_time_col]].copy()
         
-        # 处理生存时间单位转换
+        # Handle survival time unit conversion
         os_time = y[os_time_col]
         
         if time_unit == 'auto':
-            # 自动判断时间单位并统一转换为月
+            # Automatically determine time unit and convert to months
             max_time = os_time.max()
             if max_time > 1000:
-                # 假设为天，转为月
+                # Assume days, convert to months
                 y[os_time_col] = os_time / 30.44
-                print(f"🕐 检测到时间单位为天，已转换为月（除以30.44）")
+                print(f"🕐 Detected time unit as days, converted to months (divided by 30.44)")
             elif max_time < 100:
-                # 假设为年，转为月
+                # Assume years, convert to months
                 y[os_time_col] = os_time * 12
-                print(f"🕐 检测到时间单位为年，已转换为月（乘以12）")
+                print(f"🕐 Detected time unit as years, converted to months (multiplied by 12)")
             else:
-                # 已为月，无需处理
-                print(f"🕐 检测到时间单位为月，无需转换")
+                # Already in months, no processing needed
+                print(f"🕐 Detected time unit as months, no conversion needed")
         elif time_unit == 'days':
             y[os_time_col] = os_time / 30.44
-            print(f"🕐 将时间从天转换为月（除以30.44）")
+            print(f"🕐 Converted time from days to months (divided by 30.44)")
         elif time_unit == 'years':
             y[os_time_col] = os_time * 12
-            print(f"🕐 将时间从年转换为月（乘以12）")
+            print(f"🕐 Converted time from years to months (multiplied by 12)")
         elif time_unit == 'months':
-            # 已为月，无需处理
+            # Already in months, no processing needed
             pass
         else:
             raise ValueError(f"Unsupported time_unit: {time_unit}")
         
-        # 处理生存状态标签
+        # Handle survival status labels
         os_col_data = y[os_col]
         
-        # 判断OS是否为0/1变量，如果为字符串则转换
+        # Check if OS is 0/1 variable, convert if string
         if os_col_data.dtype == object or str(os_col_data.dtype).startswith('str'):
-            # 常见生存分析标签映射
+            # Common survival analysis label mapping
             label_mapping = {
                 'Dead': 1, 'Alive': 0,
                 'deceased': 1, 'living': 0,
@@ -97,67 +97,67 @@ class pp:
                 't': 1, 'f': 0
             }
             
-            # 尝试映射
+            # Try mapping
             y[os_col] = os_col_data.map(label_mapping)
             
-            # 检查是否有未映射的值
+            # Check for unmapped values
             if y[os_col].isnull().any():
                 try:
-                    # 尝试直接转为int
+                    # Try direct conversion to int
                     y[os_col] = os_col_data.astype(int)
-                    print(f"🏷️ 将生存状态从字符串转换为数值")
+                    print(f"🏷️ Converted survival status from string to numeric")
                 except Exception as e:
-                    # 显示未映射的值
+                    # Show unmapped values
                     unmapped_values = os_col_data[y[os_col].isnull()].unique()
-                    raise ValueError(f"OS列无法转换为0/1变量，未映射的值: {unmapped_values}")
+                    raise ValueError(f"OS column cannot be converted to 0/1 variable, unmapped values: {unmapped_values}")
             else:
-                print(f"🏷️ 将生存状态从字符串转换为数值（映射成功）")
+                print(f"🏷️ Converted survival status from string to numeric (mapping successful)")
         else:
-            # 若已为数值，确保为0/1
+            # If already numeric, ensure 0/1 format
             y[os_col] = os_col_data.apply(lambda v: 1 if v == 1 else 0)
-            print(f"🏷️ 生存状态已为数值，确保为0/1格式")
+            print(f"🏷️ Survival status already numeric, ensuring 0/1 format")
         
-        # 验证处理结果
+        # Validate processing results
         unique_os_values = y[os_col].unique()
         if not all(val in [0, 1] for val in unique_os_values):
-            raise ValueError(f"生存状态处理失败，包含非0/1值: {unique_os_values}")
+            raise ValueError(f"Survival status processing failed, contains non-0/1 values: {unique_os_values}")
         
-        # 检查时间值是否合理
+        # Check if time values are reasonable
         if (y[os_time_col] < 0).any():
-            warnings.warn("检测到负的生存时间值")
+            warnings.warn("Detected negative survival time values")
         
-        # 将处理后的数据添加到nadata.Meta中
-        # 只将生存状态列赋值给target_col
+        # Add processed data to nadata.Meta
+        # Only assign survival status column to target_col
         nadata.Meta['Event'] = y[os_col]
     
-        # 更新原始的生存时间列
+        # Update original survival time column
         nadata.Meta['Time'] = y[os_time_col]
         
-        print(f"✅ 生存数据处理完成")
-        print(f"   - 生存状态: {os_col} -> Event")
-        print(f"   - 生存时间: '{os_time_col}'-> Time (单位: 月)")
-        print(f"   - 数据形状: {nadata.Meta['Event'].shape}")
-        print(f"   - 生存状态分布: {nadata.Meta['Event'].value_counts().to_dict()}")
+        print(f"✅ Survival data processing completed")
+        print(f"   - Survival status: {os_col} -> Event")
+        print(f"   - Survival time: '{os_time_col}'-> Time (unit: months)")
+        print(f"   - Data shape: {nadata.Meta['Event'].shape}")
+        print(f"   - Survival status distribution: {nadata.Meta['Event'].value_counts().to_dict()}")
         return nadata
     
     @staticmethod
     def fillna(X, method: str = "mean", fill_value: float = 0):
         """
-        处理缺失值
+        Handle missing values
         
         Parameters:
         -----------
         X : np.ndarray
-            输入数据矩阵
+            Input data matrix
         method : str
-            处理方法：'mean', 'median', 'zero', 'drop'
+            Processing method: 'mean', 'median', 'zero', 'drop'
         fill_value : float
-            填充值，用于'zero'方法
+            Fill value, used for 'zero' method
             
         Returns:
         --------
         np.ndarray
-            处理后的数据矩阵
+            Processed data matrix
         """
         if X is None:
             return X
@@ -166,29 +166,29 @@ class pp:
             return X
         
         if method == "mean":
-            # 检查每一列是否全为NaN，若是则用0填充，否则用均值填充
+            # Check if each column is all NaN, if so fill with 0, otherwise fill with mean
             nan_all_col = np.isnan(X).all(axis=0)
             if nan_all_col.any():
                 X[:, nan_all_col] = 0
-            # 对剩余有NaN的列用均值填充
+            # Fill remaining columns with NaN using mean
             imputer = SimpleImputer(strategy='mean')
             X = imputer.fit_transform(X)
             
         elif method == "median":
-            # 检查每一列是否全为NaN，若是则用0填充，否则用中位数填充
+            # Check if each column is all NaN, if so fill with 0, otherwise fill with median
             nan_all_col = np.isnan(X).all(axis=0)
             if nan_all_col.any():
                 X[:, nan_all_col] = 0
-            # 对剩余有NaN的列用中位数填充
+            # Fill remaining columns with NaN using median
             imputer = SimpleImputer(strategy='median')
             X = imputer.fit_transform(X)
             
         elif method == "zero":
-            # 用指定值填充
+            # Fill with specified value
             X = np.nan_to_num(X, nan=fill_value)
             
         elif method == "drop":
-            # 删除包含缺失值的行
+            # Delete rows containing missing values
             mask = ~np.isnan(X).any(axis=1)
             X = X[mask]
             
@@ -200,19 +200,19 @@ class pp:
     @staticmethod
     def scale(X, method: str = "standard"):
         """
-        数据标准化
+        Data standardization
         
         Parameters:
         -----------
         X : np.ndarray
-            输入数据矩阵
+            Input data matrix
         method : str
-            标准化方法：'standard', 'minmax', 'robust'
+            Standardization method: 'standard', 'minmax', 'robust'
             
         Returns:
         --------
         np.ndarray
-            标准化后的数据矩阵
+            Standardized data matrix
         """
         if X is None:
             return X
@@ -237,18 +237,18 @@ class pp:
     @staticmethod
     def x_train_test(X, nadata, test_size: float = 0.2, random_state: int = 42):
         """
-        获取训练集和测试集的X数据
+        Get X data for training and test sets
         
         Parameters:
         -----------
         X : np.ndarray
-            特征数据矩阵
-        nadata : nadata对象
-            包含划分信息的nadata对象
+            Feature data matrix
+        nadata : nadata object
+            nadata object containing split information
         test_size : float
-            测试集比例
+            Test set proportion
         random_state : int
-            随机种子
+            Random seed
             
         Returns:
         --------
@@ -256,12 +256,12 @@ class pp:
             (X_train, X_test)
         """
         if hasattr(nadata, 'Model') and hasattr(nadata.Model, 'indices'):
-            # 使用已保存的划分信息
+            # Use saved split information
             train_idx = nadata.Model.indices['train']
             test_idx = nadata.Model.indices['test']
             X_train, X_test = X[train_idx], X[test_idx]
         else:
-            # 使用随机划分
+            # Use random split
             from sklearn.model_selection import train_test_split
             indices = np.arange(X.shape[0])
             train_idx, test_idx = train_test_split(
@@ -274,18 +274,18 @@ class pp:
     @staticmethod
     def y_train_test(y, nadata, test_size: float = 0.2, random_state: int = 42):
         """
-        获取训练集和测试集的y数据
+        Get y data for training and test sets
         
         Parameters:
         -----------
         y : pd.Series or np.ndarray
-            标签数据
-        nadata : nadata对象
-            包含划分信息的nadata对象
+            Label data
+        nadata : nadata object
+            nadata object containing split information
         test_size : float
-            测试集比例
+            Test set proportion
         random_state : int
-            随机种子
+            Random seed
             
         Returns:
         --------
@@ -293,7 +293,7 @@ class pp:
             (y_train, y_test)
         """
         if hasattr(nadata, 'Model') and hasattr(nadata.Model, 'indices'):
-            # 使用已保存的划分信息
+            # Use saved split information
             train_idx = nadata.Model.indices['train']
             test_idx = nadata.Model.indices['test']
             if isinstance(y, pd.Series):
@@ -301,7 +301,7 @@ class pp:
             else:
                 y_train, y_test = y[train_idx], y[test_idx]
         else:
-            # 使用随机划分
+            # Use random split
             from sklearn.model_selection import train_test_split
             indices = np.arange(len(y))
             train_idx, test_idx = train_test_split(
@@ -317,21 +317,21 @@ class pp:
     @staticmethod
     def normalize(nadata, method: str = "zscore", scale_factor: float = 10000):
         """
-        数据标准化
+        Data standardization
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含表达矩阵的nadata对象
+        nadata : nadata object
+            nadata object containing expression matrix
         method : str
-            标准化方法：'zscore', 'minmax', 'robust', 'quantile', 'cell_by_gene'
+            Standardization method: 'zscore', 'minmax', 'robust', 'quantile', 'cell_by_gene'
         scale_factor : float
-            缩放因子，用于cell_by_gene方法
+            Scale factor, used for cell_by_gene method
             
         Returns:
         --------
         nadata
-            标准化后的nadata对象
+            Standardized nadata object
         """
         if nadata.X is None:
             raise ValueError("Expression matrix X is None")
@@ -351,7 +351,7 @@ class pp:
             X_normalized = scaler.fit_transform(X.T).T
             
         elif method == "quantile":
-            # 分位数标准化
+            # Quantile standardization
             X_normalized = np.zeros_like(X)
             for i in range(X.shape[0]):
                 gene_exp = X[i, :]
@@ -362,7 +362,7 @@ class pp:
                     X_normalized[i, :] = gene_exp
                     
         elif method == "cell_by_gene":
-            # 按细胞标准化（单细胞数据常用）
+            # Standardize by cell (commonly used for single-cell data)
             X_normalized = _normalize_cell_by_gene(X, scale_factor)
             
         else:
@@ -374,21 +374,21 @@ class pp:
     @staticmethod
     def handle_missing_values(nadata, method: str = "drop", fill_value: float = 0):
         """
-        缺失值处理
+        Missing value handling
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         method : str
-            处理方法：'drop', 'fill', 'interpolate'
+            Processing method: 'drop', 'fill', 'interpolate'
         fill_value : float
-            填充值，用于fill方法
+            Fill value, used for fill method
             
         Returns:
         --------
         nadata
-            处理后的nadata对象
+            Processed nadata object
         """
         if nadata.X is None:
             return nadata
@@ -396,14 +396,14 @@ class pp:
         X = nadata.X
         
         if method == "drop":
-            # 删除包含缺失值的基因或样本
-            # 删除基因（行）
+            # Delete genes or samples containing missing values
+            # Delete genes (rows)
             gene_mask = ~np.isnan(X).any(axis=1)
             X_clean = X[gene_mask, :]
             if nadata.Var is not None:
                 nadata.Var = nadata.Var.iloc[gene_mask]
             
-            # 删除样本（列）
+            # Delete samples (columns)
             sample_mask = ~np.isnan(X_clean).any(axis=0)
             X_clean = X_clean[:, sample_mask]
             if nadata.Meta is not None:
@@ -412,28 +412,28 @@ class pp:
             nadata.X = X_clean
             
         elif method == "fill":
-            # 用指定值填充
+            # Fill with specified value
             X_filled = np.nan_to_num(X, nan=fill_value)
             nadata.X = X_filled
             
         elif method == "interpolate":
-            # 插值填充
+            # Interpolation filling
             from scipy.interpolate import interp1d
             
             X_interpolated = X.copy()
             for i in range(X.shape[0]):
                 gene_exp = X[i, :]
                 if np.isnan(gene_exp).any():
-                    # 找到非缺失值的索引
+                    # Find indices of non-missing values
                     valid_idx = ~np.isnan(gene_exp)
                     if valid_idx.sum() > 1:
-                        # 插值
+                        # Interpolate
                         f = interp1d(np.where(valid_idx)[0], gene_exp[valid_idx], 
                                     kind='linear', fill_value='extrapolate')
                         all_idx = np.arange(len(gene_exp))
                         X_interpolated[i, :] = f(all_idx)
                     else:
-                        # 如果只有一个有效值，用该值填充
+                        # If only one valid value, fill with that value
                         valid_value = gene_exp[valid_idx][0]
                         X_interpolated[i, :] = valid_value
             
@@ -447,21 +447,21 @@ class pp:
     @staticmethod
     def detect_outliers(nadata, method: str = "iqr", threshold: float = 1.5):
         """
-        异常值检测
+        Outlier detection
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         method : str
-            检测方法：'iqr', 'zscore', 'isolation_forest'
+            Detection method: 'iqr', 'zscore', 'isolation_forest'
         threshold : float
-            阈值
+            Threshold
             
         Returns:
         --------
         nadata
-            处理后的nadata对象
+            Processed nadata object
         """
         if nadata.X is None:
             return nadata
@@ -470,7 +470,7 @@ class pp:
         outlier_mask = np.zeros(X.shape, dtype=bool)
         
         if method == "iqr":
-            # IQR方法
+            # IQR method
             for i in range(X.shape[0]):
                 gene_exp = X[i, :]
                 Q1 = np.percentile(gene_exp, 25)
@@ -481,14 +481,14 @@ class pp:
                 outlier_mask[i, :] = (gene_exp < lower_bound) | (gene_exp > upper_bound)
                 
         elif method == "zscore":
-            # Z-score方法
+            # Z-score method
             for i in range(X.shape[0]):
                 gene_exp = X[i, :]
                 z_scores = np.abs((gene_exp - np.mean(gene_exp)) / np.std(gene_exp))
                 outlier_mask[i, :] = z_scores > threshold
                 
         elif method == "isolation_forest":
-            # 隔离森林方法
+            # Isolation forest method
             from sklearn.ensemble import IsolationForest
             
             iso_forest = IsolationForest(contamination=0.1, random_state=42)
@@ -498,7 +498,7 @@ class pp:
         else:
             raise ValueError(f"Unsupported outlier detection method: {method}")
         
-        # 将异常值设为NaN
+        # Set outliers to NaN
         X_clean = X.copy()
         X_clean[outlier_mask] = np.nan
         nadata.X = X_clean
@@ -508,21 +508,21 @@ class pp:
     @staticmethod
     def filter_genes(nadata, method: str = "variance", **kwargs):
         """
-        基因过滤
+        Gene filtering
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         method : str
-            过滤方法：'variance', 'top_k', 'expression_threshold'
+            Filtering method: 'variance', 'top_k', 'expression_threshold'
         **kwargs : 
-            其他参数
+            Other parameters
             
         Returns:
         --------
         nadata
-            过滤后的nadata对象
+            Filtered nadata object
         """
         if nadata.X is None:
             return nadata
@@ -530,19 +530,19 @@ class pp:
         X = nadata.X
         
         if method == "variance":
-            # 方差过滤
+            # Variance filtering
             threshold = kwargs.get('threshold', 0.01)
             selector = VarianceThreshold(threshold=threshold)
             X_filtered = selector.fit_transform(X.T).T
             gene_mask = selector.get_support()
             
         elif method == "top_k":
-            # 选择前k个基因
+            # Select top k genes
             k = kwargs.get('k', 1000)
             if k >= X.shape[0]:
                 return nadata
             
-            # 计算方差
+            # Calculate variance
             variances = np.var(X, axis=1)
             top_indices = np.argsort(variances)[-k:]
             X_filtered = X[top_indices, :]
@@ -550,11 +550,11 @@ class pp:
             gene_mask[top_indices] = True
             
         elif method == "expression_threshold":
-            # 表达量阈值过滤
+            # Expression threshold filtering
             threshold = kwargs.get('threshold', 0)
             min_cells = kwargs.get('min_cells', 1)
             
-            # 计算每个基因在多少个细胞中表达
+            # Calculate how many cells each gene is expressed in
             expressed_cells = (X > threshold).sum(axis=1)
             gene_mask = expressed_cells >= min_cells
             X_filtered = X[gene_mask, :]
@@ -573,21 +573,21 @@ class pp:
     @staticmethod
     def filter_samples(nadata, method: str = "quality", **kwargs):
         """
-        样本过滤
+        Sample filtering
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         method : str
-            过滤方法：'quality', 'expression_threshold'
+            Filtering method: 'quality', 'expression_threshold'
         **kwargs : 
-            其他参数
+            Other parameters
             
         Returns:
         --------
         nadata
-            过滤后的nadata对象
+            Filtered nadata object
         """
         if nadata.X is None:
             return nadata
@@ -595,20 +595,20 @@ class pp:
         X = nadata.X
         
         if method == "quality":
-            # 质量过滤
+            # Quality filtering
             min_genes = kwargs.get('min_genes', 1)
             max_genes = kwargs.get('max_genes', float('inf'))
             
-            # 计算每个样本表达的基因数
+            # Calculate number of expressed genes per sample
             expressed_genes = (X > 0).sum(axis=0)
             sample_mask = (expressed_genes >= min_genes) & (expressed_genes <= max_genes)
             
         elif method == "expression_threshold":
-            # 表达量阈值过滤
+            # Expression threshold filtering
             threshold = kwargs.get('threshold', 0)
             min_genes = kwargs.get('min_genes', 1)
             
-            # 计算每个样本表达量超过阈值的基因数
+            # Calculate number of genes with expression above threshold per sample
             expressed_genes = (X > threshold).sum(axis=0)
             sample_mask = expressed_genes >= min_genes
             
@@ -625,25 +625,25 @@ class pp:
     def split_data(nadata, test_size: float = 0.2,
                    random_state: int = 42, strategy: str = "random"):
         """
-        数据划分
+        Data splitting
         
         Parameters:
         -----------
-        nadata : nadata对象
-            包含数据的nadata对象
+        nadata : nadata object
+            nadata object containing data
         test_size : float
-            测试集比例
+            Test set proportion
         val_size : float
-            验证集比例
+            Validation set proportion
         random_state : int
-            随机种子
+            Random seed
         strategy : str
-            划分策略：'random', 'stratified'
+            Split strategy: 'random', 'stratified'
             
         Returns:
         --------
         nadata
-            包含划分信息的nadata对象
+            nadata object containing split information
         """
         if nadata.X is None:
             return nadata
@@ -654,7 +654,7 @@ class pp:
         if strategy == "random":
             from sklearn.model_selection import train_test_split
             
-            # 首先划分出测试集
+            # First split out test set
             train_indices, test_indices = train_test_split(
                 indices, test_size=test_size, random_state=random_state
             )
@@ -663,11 +663,11 @@ class pp:
         elif strategy == "stratified":
             from sklearn.model_selection import train_test_split
             
-            # 需要目标变量进行分层抽样
+            # Need target variable for stratified sampling
             if nadata.Meta is not None and 'target' in nadata.Meta.columns:
                 target = nadata.Meta['target']
                 
-                # 首先划分出测试集
+                # First split out test set
                 train_indices, test_indices = train_test_split(
                     indices, test_size=test_size, random_state=random_state, 
                     stratify=target
@@ -677,13 +677,13 @@ class pp:
                 warnings.warn("No target column found for stratified sampling, using random split")
                 return pp.split_data(nadata, test_size, random_state, "random")
         
-        # 保存划分信息到nadata.Model.indices中
+        # Save split information to nadata.Model.indices
         nadata.Model.set_indices(
             train_idx=train_indices,
             test_idx=test_indices,
         )
         
-        # 同时保存策略信息到config中
+        # Also save strategy information to config
         if not hasattr(nadata, 'config'):
             nadata.config = {}
         nadata.config['data_split_strategy'] = strategy
@@ -693,27 +693,27 @@ class pp:
 
 def _normalize_cell_by_gene(X: np.ndarray, scale_factor: float = 10000) -> np.ndarray:
     """
-    按细胞标准化（单细胞数据常用）
+    Standardize by cell (commonly used for single-cell data)
     
     Parameters:
     -----------
     X : np.ndarray
-        表达矩阵
+        Expression matrix
     scale_factor : float
-        缩放因子
+        Scale factor
         
     Returns:
     --------
     np.ndarray
-        标准化后的表达矩阵
+        Standardized expression matrix
     """
-    # 计算每个细胞的总表达量
+    # Calculate total expression per cell
     cell_sums = np.sum(X, axis=0)
     
-    # 标准化
+    # Standardize
     X_normalized = X / cell_sums * scale_factor
     
-    # 对数转换
+    # Log transformation
     X_normalized = np.log1p(X_normalized)
     
     return X_normalized 

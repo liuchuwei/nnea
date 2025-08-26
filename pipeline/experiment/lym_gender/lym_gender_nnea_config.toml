@@ -12,7 +12,7 @@
     random_state = 42
     feature_selection = true
     selection_method = "differential_expression"
-    n_features = 12000
+    n_features = 7000 # 7000
 
 # nnea model configuration
 [nnea]
@@ -23,42 +23,42 @@
 
     # Geneset layer configuration
     [nnea.geneset_layer]
-        min_set_size = 3
-        max_set_size = 10
-        num_genesets = 10
-        attention_dim = 32
-        dropout = 0.3
+        min_set_size = 10
+        max_set_size = 50
+        num_genesets = 25 # 30
+        attention_dim = 32 # 32
+        dropout = 0.30 # 0.30
         geneset_threshold = 1e-5
-        init_max_epochs = 2000  # Maximum initialization epochs
-        init_patience = 2000  # Initialization early stopping patience
+        init_max_epochs = 2000  # 2000 Maximum initialization epochs
+        init_patience = 2000  # 2000 Initialization early stopping patience
         # Initialization phase loss weight configuration
         init_task_loss_weight = 1.0  # Task loss weight (classification loss)
-        init_reg_loss_weight = 1.0  # Regularization loss weight (higher weight)
+        init_reg_loss_weight = 0.0075  # 0.0075 Regularization loss weight (higher weight)
         init_total_loss_weight = 1.0  # Total loss weight
 
     [nnea.focus_layer]
         classifier_name = "linear"  # Options: "linear", "attention"
-        hidden_dims = [512, 256] # [256, 128]  # Can override model.hidden_dims
-        classifier_dropout = [0.3, 0.2]# [0.3, 0.2]  # Dropout rate for each hidden layer
+        hidden_dims = [1024, 512] # [512, 256]  # Can override model.hidden_dims
+        classifier_dropout = [0.3, 0.5]# [0.3, 0.5]  # Dropout rate for each hidden layer
         output_dim = 2  # Dynamically set output dimension
 
     [nnea.assist_layer]
         use_in_init = true
-        dropout = 0.1
+        dropout = 0.1 # 0.1
         output = 2
         type = "classification" # classification, rec
 
 # Training configuration
 [training]
     epochs = 10000
-    tailor = true
+    tailor = false # true
     tailor_epoch = 100
     tailor_geneset = 1
     batch_size = 12
-    learning_rate = 0.001
-    weight_decay = 1e-5
+    learning_rate = 0.0005 # 0.0005
+    weight_decay = 5e-5
     patience = 10
-    regularization_weight = 1
+    regularization_weight = 1.0
 
 [explain]
     explain_knowledge = "./data/genesets/c1.all.v2025.1.Hs.symbols.gmt"

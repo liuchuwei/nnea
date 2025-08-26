@@ -4,27 +4,29 @@
     model = "linear_svm"
     device = "auto"  # Auto-detect GPU/CPU
     seed = 42
-    inputfl = "./datasets/tumor_imm/melanoma_immunotherapy.pkl"
-    outputfl = "melanoma_imm_LinearSVM.pkl"
-    outdir = "experiment/melanoma_imm_LinearSVM"
+    inputfl = "./datasets/cell_gender/lymphocyte_gender_classification.pkl"
+    outputfl = "lym_gender_LinearSVM.pkl"
+    outdir = "experiment/lym_gender_LinearSVM"
 
 # Dataset configuration
 [dataset]
-    test_size = 0.2
-    val_size = 0.2
+    test_size = 0.15
+    val_size = 0.15
     random_state = 42
 
 # LinearSVM model configuration
 [linear_svm]
-    # Basic parameters
-    C = [0.01, 0.10, 1.0, 10.0, 100.0]  # Regularization parameter
-    kernel = ["linear"]  # Linear kernel function
+    # Basic parameters - Expand C value range, add more regularization options
+    C = [0.001, 0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0]  # More fine-grained regularization parameter search
+    penalty = ["l1", "l2"]  # Add regularization type selection
     loss = ["hinge", "squared_hinge"]  # Loss function
+    dual = [true, false]  # Dual form selection
 
     # Other optional parameters
     random_state = 42  # Random seed
-    class_weight = "balanced"  # Class weight
-    max_iter = 1000  # Maximum iterations
+    class_weight = ["balanced"]  # Try different class weight strategies
+    max_iter = [2000, 5000]  # Increase maximum iterations
+    tol = [1e-4, 1e-5]  # Adjust convergence tolerance
 
     # Cross-validation configuration
     cv_folds = 5  # Cross-validation folds
@@ -34,7 +36,7 @@
     # Feature selection configuration - Linear SVM can handle more features
     feature_selection = true
     selection_method = "lasso"
-    n_features = 30  # Linear SVM can handle more features
+    n_features = 7000  # Linear SVM can handle more features
     selection_alpha = 0.01
 
     # Data preprocessing configuration - Linear SVM is sensitive to feature scale, must standardize

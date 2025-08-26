@@ -4,14 +4,14 @@
     model = "adaboost"
     device = "auto"  # Auto-detect GPU/CPU
     seed = 42
-    inputfl = "./datasets/tumor_imm/melanoma_immunotherapy.pkl"
-    outputfl = "melanoma_imm_AdaBoost.pkl"
-    outdir = "experiment/melanoma_imm_AdaBoost"
+    inputfl = "./datasets/cell_gender/lymphocyte_gender_classification.pkl"
+    outputfl = "lym_gender_AdaBoost.pkl"
+    outdir = "experiment/lym_gender_AdaBoost"
 
 # Dataset configuration
 [dataset]
-    test_size = 0.2
-    val_size = 0.2
+    test_size = 0.15
+    val_size = 0.15
     random_state = 42
 
 # AdaBoostClassifier model configuration
@@ -53,4 +53,4 @@
 [evaluation]
     metrics = ["roc_auc", "classification_report"]
     save_predictions = true
-    save_probabilities = true 
+    save_probabilities = true

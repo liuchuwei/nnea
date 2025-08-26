@@ -500,26 +500,26 @@ class NNEAClassifier(BaseModel):
                         best_epoch = epoch
                         patience_counter = 0
                         
-                        # Save best model state
+                        # # Save best model state
                         best_model_state = self.model.state_dict().copy()
-                        
-                        # Save checkpoint
-                        checkpoint_path = os.path.join(outdir, f"checkpoint_epoch_{epoch}.pth")
-                        try:
-                            torch.save({
-                                'epoch': epoch,
-                                'model_state_dict': best_model_state,
-                                'optimizer_state_dict': optimizer.state_dict(),
-                                'val_loss': best_val_loss,
-                                'train_loss': avg_loss if num_batches > 0 else None,
-                                'train_reg_loss': avg_reg_loss if num_batches > 0 else None,
-                                'val_reg_loss': avg_val_reg_loss
-                            }, checkpoint_path)
-                            if verbose >= 1:
-                                self.logger.info(f"✅ Epoch {epoch}: Validation loss improved to {best_val_loss:.4f}")
-                                self.logger.info(f"💾 Checkpoint saved to: {checkpoint_path}")
-                        except Exception as e:
-                            self.logger.error(f"Failed to save checkpoint: {e}")
+                        #
+                        # # Save checkpoint
+                        # checkpoint_path = os.path.join(outdir, f"checkpoint_epoch_{epoch}.pth")
+                        # try:
+                        #     torch.save({
+                        #         'epoch': epoch,
+                        #         'model_state_dict': best_model_state,
+                        #         'optimizer_state_dict': optimizer.state_dict(),
+                        #         'val_loss': best_val_loss,
+                        #         'train_loss': avg_loss if num_batches > 0 else None,
+                        #         'train_reg_loss': avg_reg_loss if num_batches > 0 else None,
+                        #         'val_reg_loss': avg_val_reg_loss
+                        #     }, checkpoint_path)
+                        #     if verbose >= 1:
+                        #         self.logger.info(f"✅ Epoch {epoch}: Validation loss improved to {best_val_loss:.4f}")
+                        #         self.logger.info(f"💾 Checkpoint saved to: {checkpoint_path}")
+                        # except Exception as e:
+                        #     self.logger.error(f"Failed to save checkpoint: {e}")
                     else:
                         patience_counter += 1
                         if verbose >= 1:
@@ -536,15 +536,15 @@ class NNEAClassifier(BaseModel):
         if best_model_state is not None:
             self.model.load_state_dict(best_model_state)
             self.logger.info(f"🔄 Best model restored (Epoch {best_epoch}, Val Loss: {best_val_loss:.4f})")
-            
-            # Save final best model
-            final_best_model_path = os.path.join(outdir, "best_model_final.pth")
-            try:
-                torch.save(best_model_state, final_best_model_path)
-                self.logger.info(f"💾 Final best model saved to: {final_best_model_path}")
-            except Exception as e:
-                self.logger.error(f"Failed to save final best model: {e}")
-        
+            #
+            # # Save final best model
+            # final_best_model_path = os.path.join(outdir, "best_model_final.pth")
+            # try:
+            #     torch.save(best_model_state, final_best_model_path)
+            #     self.logger.info(f"💾 Final best model saved to: {final_best_model_path}")
+            # except Exception as e:
+            #     self.logger.error(f"Failed to save final best model: {e}")
+            #
         # Training complete
         self.is_trained = True
         
@@ -1081,7 +1081,8 @@ class NNEAClassifier(BaseModel):
                 'importance': {
                     'top_genes': top_genes,
                     'importance_scores': top_scores.tolist(),
-                    'genesets': genesets_annotated,
+                    'genesets': genesets_refined,
+                    'genesets_annotated': genesets_annotated,
                     'geneset_importance': geneset_importance.tolist(),
                     'attention_weights': attention_weights.tolist(),
                     'feature_importance': feature_importance.tolist(),
@@ -1124,6 +1125,20 @@ class NNEAClassifier(BaseModel):
                     keys_list = list(genesets_annotated.keys())
                     if idx < len(keys_list):
                         geneset_key = keys_list[idx]
+                        # Check if enrichment data exists and is not empty
+                        if (geneset_key in genesets_annotated and 
+                            'enrichment' in genesets_annotated[geneset_key] and 
+                            genesets_annotated[geneset_key]['enrichment'] is not None and
+                            len(genesets_annotated[geneset_key]['enrichment']) > 0):
+                            # Get the pathway id from the first row of enrichment data
+                            enrichment_data = genesets_annotated[geneset_key]['enrichment']
+                            if hasattr(enrichment_data, 'iloc') and len(enrichment_data) > 0:  # DataFrame
+                                first_row = enrichment_data.iloc[0]
+                                if 'ID' in enrichment_data.columns:
+                                    geneset_key = str(first_row['ID'])
+                                elif len(enrichment_data.columns) > 0:
+                                    # If no pathway_id column, use the first column
+                                    geneset_key = str(first_row.iloc[0])
                 
                 # Get top genes assigned to this geneset
                 # Based on geneset_assignments matrix, find important genes assigned to this geneset

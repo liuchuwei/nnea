@@ -189,21 +189,19 @@ def train(nadata, model_name: Optional[str] = None, verbose: int = 1) -> Dict[st
     """
     if not nadata.Model.models:
         raise ValueError("nadata.Model has no models, please call build() first")
-    
+
     # Determine which model to train
     if model_name is None:
         model_type = nadata.Model.get_config().get('global', {}).get('model', 'nnea')
         model = nadata.Model.get_model(model_type)
     else:
         model = nadata.Model.get_model(model_name)
-    
+
     if model is None:
         raise ValueError(f"Model not found: {model_name or 'default'}")
-    
+
     # Check if tailor strategy is enabled
-    config = nadata.Model.get_config()
-    training_config = config.get('training', {})
-    tailor_enabled = training_config.get('tailor', False)
+    tailor_enabled = nadata.Model.get_config().get('training', {}).get('tailor', False)
     
     if tailor_enabled:
         # Use tailor training strategy
@@ -254,7 +252,6 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
     
     # Early stopping variables
     best_val_loss = float('inf')
-    best_model_state = None
     best_stage = 0
     no_improvement_count = 0
     max_no_improvement = 3  # Stop if validation loss does not decrease for 3 consecutive tailor epochs
@@ -288,8 +285,6 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
             best_val_loss = current_val_loss
             best_stage = stage_num
             no_improvement_count = 0
-            # Save best model state
-            best_model_state = current_model.model.state_dict().copy()
             logger.info(f"✅ Stage {stage_num} validation loss improved to {best_val_loss:.6f}")
         else:
             no_improvement_count += 1
@@ -314,7 +309,7 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
             break
         
         # If not yet at total epochs, perform pruning
-        if current_epoch < total_epochs:
+        if current_epoch <= total_epochs:
             logger.info(f"Stage {stage_num} training completed, starting model pruning...")
             
             # Get gene set importance
@@ -339,7 +334,7 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
             important_indices = np.argsort(geneset_importance)[num_genesets_to_remove:]
             
             # Try to get genesets_annotated key
-            genesets_annotated = nadata.uns.get('nnea_explain', {}).get('importance', {}).get('genesets', {})
+            genesets_annotated = nadata.uns.get('nnea_explain', {}).get('importance', {}).get('genesets_annotated', {})
             if genesets_annotated:
                 # Get list of geneset keys
                 geneset_keys = list(genesets_annotated.keys())
@@ -347,7 +342,7 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
                 # Map indices to geneset keys
                 removed_keys = [geneset_keys[idx] if idx < len(geneset_keys) else f"Geneset_{idx}" for idx in least_important_indices]
                 kept_keys = [geneset_keys[idx] if idx < len(geneset_keys) else f"Geneset_{idx}" for idx in important_indices]
-                
+
                 logger.info(f"Removing gene sets: {removed_keys}")
                 logger.info(f"Keeping gene sets: {kept_keys}")
             else:
@@ -381,7 +376,7 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
             cropped_model = _crop_nnea_model(nadata, current_model, important_indices, config)
             
             # Update model in nadata
-            nadata.Model.add_model(f"{model_type}_cropped_stage_{stage_num}", cropped_model)
+            nadata.Model.add_model(f"{model_type}_stage_{stage_num}", current_model)
             
             # Update current model to the cropped model
             current_model = cropped_model
@@ -390,99 +385,40 @@ def _train_with_tailor(nadata, model, verbose: int = 1) -> Dict[str, Any]:
         else:
             logger.info("Training completed, no further pruning needed")
     
-    # Load best model
-    if best_model_state is not None:
+    # Load best model from nadata Model container
+    if best_stage is not None:
         logger.info(f"🔄 Loading best model (Stage {best_stage}, validation loss: {best_val_loss:.6f})")
         
-        # Check if parameter dimensions of current model match best model state
-        current_state_dict = current_model.model.state_dict()
-        best_state_dict = best_model_state
-        
-        # Check if key parameters match
-        dimension_mismatch = False
-        mismatch_info = []
-        
-        for key in best_state_dict.keys():
-            if key in current_state_dict:
-                if best_state_dict[key].shape != current_state_dict[key].shape:
-                    dimension_mismatch = True
-                    mismatch_info.append(f"{key}: {best_state_dict[key].shape} vs {current_state_dict[key].shape}")
-        
-        if dimension_mismatch:
-            logger.warning(f"⚠️ Detected parameter dimension mismatch, which might be due to model pruning:")
-            for info in mismatch_info:
-                logger.warning(f"   {info}")
-            
-            # Attempt to reconstruct model from best model state
-            logger.info("🔄 Attempting to reconstruct model from best model state...")
-            try:
-                # Infer original configuration from best model state
-                best_num_genesets = best_state_dict.get('geneset_layer.query_vectors', torch.tensor([])).shape[0]
-                if best_num_genesets > 0:
-                    # Create configuration matching best model state
-                    best_config = config.copy()
-                    nnea_config = best_config.get('nnea', {})
-                    geneset_config = nnea_config.get('geneset_layer', {})
-                    geneset_config['num_genesets'] = best_num_genesets
-                    nnea_config['geneset_layer'] = geneset_config
-                    best_config['nnea'] = nnea_config
-                    
-                    # Create new model instance
-                    if config.get('global').get('model') == "nnea_classifier":
-                        from .nnea_classifier import NNEAClassifier
-                        best_model = NNEAClassifier(best_config)
-                        best_model.build(nadata)
-                    elif config.get('global').get('model') == "nnea_survival":
-                        from .nnea_survival import NNEASurvival
-                        best_model = NNEASurvival(best_config)
-                        best_model.build(nadata)
-                    elif config.get('global').get('model') == "nnea_regression":
-                        from .nnea_regresser import NNEARegresser
-                        best_model = NNEARegresser(best_config)
-                        best_model.build(nadata)
-
-                    # Load best model state
-                    best_model.model.load_state_dict(best_model_state)
-                    best_model.device = current_model.device
-                    best_model.model = best_model.model.to(best_model.device)
-                    
-                    # Update current model to best model
-                    current_model = best_model
-                    logger.info(f"✅ Successfully reconstructed model from best model state, number of gene sets: {best_num_genesets}")
-                else:
-                    raise ValueError("Could not infer number of gene sets from best model state")
-                    
-            except Exception as e:
-                logger.error(f"❌ Failed to reconstruct model from best model state: {e}")
-                logger.warning("⚠️ Using current model as final model")
-                # Save current model as final model
-                final_model_path = os.path.join(outdir, "final_model.pth")
-                torch.save(current_model.model.state_dict(), final_model_path)
-                logger.info(f"💾 Current model saved to: {final_model_path}")
+        # Try to get the best stage model from nadata Model container
+        best_stage_model_name = f"{model_type}_stage_{best_stage}"
+        if nadata.Model.has_model(best_stage_model_name):
+            best_model = nadata.Model.get_model(best_stage_model_name)
+            current_model = best_model
+            logger.info(f"✅ Successfully loaded best model from stage {best_stage}")
         else:
-            # Parameter dimensions match, load directly
-            current_model.model.load_state_dict(best_model_state)
+            logger.warning(f"⚠️ Best stage model '{best_stage_model_name}' not found in nadata Model container")
+            logger.warning("⚠️ Using current model as final model")
         
         # Update model in nadata to best model
-        nadata.Model.add_model(f"{model_type}_best", current_model)
+        nadata.Model.add_model(f"{model_type}", current_model)
         
         # Save final best model
-        final_best_model_path = os.path.join(outdir, "best_model_final.pth")
-        torch.save(best_model_state, final_best_model_path)
-        
-        final_best_nadata_path = os.path.join(outdir, "best_nadata_final.pkl")
-        try:
-            nadata.save(final_best_nadata_path, format="pickle", save_data=True)
-            logger.info(f"💾 Final best model saved to: {final_best_model_path}")
-            logger.info(f"💾 Final best nadata saved to: {final_best_nadata_path}")
-        except Exception as e:
-            logger.error(f"Failed to save final best model: {e}")
+        # final_best_model_path = os.path.join(outdir, "best_model_final.pth")
+        # torch.save(current_model.model.state_dict(), final_best_model_path)
+        #
+        # final_best_nadata_path = os.path.join(outdir, "best_nadata_final.pkl")
+        # try:
+        #     nadata.save(final_best_nadata_path, format="pickle", save_data=True)
+        #     logger.info(f"💾 Final best model saved to: {final_best_model_path}")
+        #     logger.info(f"💾 Final best nadata saved to: {final_best_nadata_path}")
+        # except Exception as e:
+        #     logger.error(f"Failed to save final best model: {e}")
     else:
-        logger.warning("⚠️ Best model state not found, using current model")
+        logger.warning("⚠️ Best stage not found, using current model")
         # Save current model as final model
-        final_model_path = os.path.join(outdir, "final_model.pth")
-        torch.save(current_model.model.state_dict(), final_model_path)
-        logger.info(f"💾 Current model saved to: {final_model_path}")
+        # final_model_path = os.path.join(outdir, "final_model.pth")
+        # torch.save(current_model.model.state_dict(), final_model_path)
+        # logger.info(f"💾 Current model saved to: {final_model_path}")
     
     # Combine training results
     combined_results = {
@@ -1000,11 +936,8 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
 
         # Get target column name
         config = nadata.Model.get_config()
-        target_col = config.get('dataset', {}).get('target_column', 'target')
-        y_test = nadata.Meta.iloc[indices][target_col].values
 
         logger.info(f"🔮 Performing model prediction...")
-        logger.info(f"�� Test set shape: X_test={X_test.shape}, y_test={y_test.shape}")
 
         # Model prediction
         model.model.eval()
@@ -1016,6 +949,10 @@ def predict(nadata, split='test', model_name: Optional[str] = None, return_proba
         task_type = getattr(model, 'task', 'classification')
         
         if task_type == 'classification':
+            target_col = config.get('dataset', {}).get('target_column', 'target')
+            y_test = nadata.Meta.iloc[indices][target_col].values
+            logger.info(f"�� Test set shape: X_test={X_test.shape}, y_test={y_test.shape}")
+
             # Classification task handling
             if outputs.shape[1] == 2:
                 # Binary classification case

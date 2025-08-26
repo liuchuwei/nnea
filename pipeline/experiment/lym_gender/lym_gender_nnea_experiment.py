@@ -187,11 +187,11 @@ nnea_result = {
 if not hasattr(nadata, "Model"):
     nadata.Model = {}
 
-nadata.Model["nnea_model"] = nnea_result
+nadata.Model["nnea_result"] = nnea_result
 
 # Save nadata object to file (using output directory from config)
 try:
-    save_path = os.path.join(nnea_config['global']['outdir'], "lym_gender.pkl")
+    save_path = os.path.join(nnea_config['global']['outdir'], "~lym_gender.pkl")
     nadata.save(save_path, format="pickle", save_data=True)
     print(f"✅ nnea model training completed and saved to: {save_path}")
 except Exception as e:
@@ -201,7 +201,7 @@ except Exception as e:
 print("🔄 Reloading nadata object...")
 try:
     nadata_reloaded = na.nadata()
-    load_path = os.path.join(nnea_config['global']['outdir'], "lym_gender.pkl")
+    load_path = os.path.join(nnea_config['global']['outdir'], "~lym_gender.pkl")
     nadata_reloaded.load(filepath=load_path)
     print(f"✅ Data reloaded successfully: {load_path}")
 except Exception as e:
@@ -209,7 +209,7 @@ except Exception as e:
     exit(1)
 
 # Get saved nnea results
-nnea_result_reloaded = nadata_reloaded.Model.get("nnea_classifier", None)
+nnea_result_reloaded = nadata_reloaded.Model.get(nnea_config['global']['model'], None)
 
 # Model interpretability analysis
 print("🔍 Performing model interpretability analysis...")
